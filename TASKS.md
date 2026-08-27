@@ -7,7 +7,7 @@
 | T00 | DONE | 无 | 主协调代理 | 目标、规则、架构、任务板 | main | 文档人工复核 | e9792d1 | 通过 |
 | T01 | DONE | T00 | 主协调代理 | 根配置、`packages/protocol`、CI | codex/v1-web-game | lint、typecheck、build | 317a567 | 通过 |
 | T02 | DONE | T01 | Franklin | `packages/game-core` 基础 | task/T02-engine-model / `.worktrees/T02` | game-core tests | 32e8421 | 通过 |
-| T03 | IN_PROGRESS | T02 | Franklin | `packages/game-core` 规则 | task/T03-engine-rules / `.worktrees/T03` | unit + property tests | 待填 | 待复核 |
+| T03 | BLOCKED | T02 | Franklin | `packages/game-core` 规则 | task/T03-engine-rules / `.worktrees/T03` | unit + property tests | 待填 | 等待仅剩王的死锁规则 |
 | T04 | DONE | T01 | Kuhn | `apps/server` 房间与会话 | task/T04-server-room / `.worktrees/T04` | server tests | 102a30f | 通过 |
 | T05 | DONE | T01 | Hume | `apps/web` 页面壳 | task/T05-web-shell / `.worktrees/T05` | web tests + build | 3359ec7 | 通过 |
 | T06 | BLOCKED | T03 | Franklin | `packages/bot` | task/T06-bot | bot tests | 待填 | 待复核 |
