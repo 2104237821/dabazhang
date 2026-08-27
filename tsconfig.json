@@ -1,0 +1,9 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/protocol" },
+    { "path": "./packages/game-core" },
+    { "path": "./packages/bot" },
+    { "path": "./apps/server" }
+  ]
+}
