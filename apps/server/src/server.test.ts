@@ -10,6 +10,7 @@ import { createGameServer, type GameServer } from "./server.js";
 interface TestClient {
   socket: ClientSocket;
   snapshots: StateSnapshot[];
+  serverInfo?: { instanceId: string; persistentRooms: boolean };
 }
 
 describe("game server", () => {
@@ -20,7 +21,7 @@ describe("game server", () => {
 
   beforeEach(async () => {
     startGame.mockReset();
-    server = createGameServer({ roomManagerOptions: { startGame } });
+    server = createGameServer({ roomManagerOptions: { startGame, rng: () => 0 } });
     serverUrl = await server.listen({ host: "127.0.0.1", port: 0 });
   });
 
@@ -37,6 +38,18 @@ describe("game server", () => {
 
     await expect(health.json()).resolves.toEqual({ status: "ok" });
     await expect(readiness.json()).resolves.toEqual({ status: "ready", rooms: 0 });
+  });
+
+  it("identifies the ephemeral server instance and reports a lost room after restart", async () => {
+    const client = await connectClient(serverUrl, clients);
+    expect(client.serverInfo).toMatchObject({ persistentRooms: false });
+    expect(client.serverInfo?.instanceId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const resume = await command(client.socket, "room:resume", {
+      roomCode: "ABC234",
+      resumeToken: "x".repeat(32)
+    });
+    expect(resume).toMatchObject({ ok: false, error: { code: "SERVER_RESTARTED" } });
   });
 
   it("runs the lobby flow and broadcasts seat-redacted snapshots", async () => {
@@ -115,6 +128,124 @@ describe("game server", () => {
     expect(ack).toMatchObject({ ok: false, error: { code: "BAD_REQUEST" } });
     expect(server.rooms.getRoomCount()).toBe(0);
   });
+
+  it("starts an authoritative game, redacts every other hand, and accepts a legal action", async () => {
+    const host = await connectClient(serverUrl, clients);
+    const guest = await connectClient(serverUrl, clients);
+    await command(host.socket, "room:create", { nickname: "甲" });
+    const roomCode = lastSnapshot(host).room.roomCode;
+    await command(guest.socket, "room:join", { roomCode, nickname: "乙" });
+    await command(host.socket, "room:fill-bots", {});
+    await command(host.socket, "room:ready", { ready: true });
+    await command(guest.socket, "room:ready", { ready: true });
+    const hostStarted = waitForSnapshot(host.socket, (snapshot) => snapshot.game !== undefined);
+    const guestStarted = waitForSnapshot(guest.socket, (snapshot) => snapshot.game !== undefined);
+    await command(host.socket, "room:start", {});
+    await Promise.all([hostStarted, guestStarted]);
+
+    const hostGame = lastSnapshot(host).game;
+    const guestGame = lastSnapshot(guest).game;
+    if (hostGame === undefined || guestGame === undefined) throw new Error("missing game view");
+    expect(hostGame.drawPileCount).toBe(22);
+    expect(hostGame.players.find((player) => player.seatId === 0)?.hand).toHaveLength(8);
+    expect(hostGame.players.filter((player) => player.seatId !== 0).every((player) => player.hand === undefined)).toBe(true);
+    expect(guestGame.players.find((player) => player.seatId === 1)?.hand).toHaveLength(8);
+    expect(guestGame.players.filter((player) => player.seatId !== 1).every((player) => player.hand === undefined)).toBe(true);
+    expect(hostGame).not.toHaveProperty("drawPile");
+    expect(hostGame).not.toHaveProperty("cardsById");
+
+    const attack = hostGame.legalActions.find((action) => action.type === "game:attack");
+    const cardId = attack?.cardIds?.[0];
+    if (cardId === undefined) throw new Error("expected an opening attack");
+    const actionSnapshot = waitForSnapshot(host.socket, (snapshot) => snapshot.game?.table.length === 1);
+    const actionAck = await command(
+      host.socket,
+      "game:attack",
+      { cardId },
+      lastSnapshot(host).revision
+    );
+    expect(actionAck.ok).toBe(true);
+    await actionSnapshot;
+    expect(lastSnapshot(host).game).toMatchObject({
+      phase: "await-defense",
+      table: [{ attack: { cardId } }]
+    });
+    expect(lastSnapshot(host).game?.players.find((player) => player.seatId === 0)?.hand).toHaveLength(7);
+  });
+
+  it("builds four independent human views without leaking another seat's hand", async () => {
+    const players = await Promise.all([
+      connectClient(serverUrl, clients),
+      connectClient(serverUrl, clients),
+      connectClient(serverUrl, clients),
+      connectClient(serverUrl, clients)
+    ]);
+    const host = players[0];
+    if (host === undefined) throw new Error("missing host");
+    await command(host.socket, "room:create", { nickname: "玩家0" });
+    const roomCode = lastSnapshot(host).room.roomCode;
+    for (const seatId of [1, 2, 3] as const) {
+      const player = players[seatId];
+      if (player === undefined) throw new Error(`missing player ${seatId}`);
+      await command(player.socket, "room:join", { roomCode, nickname: `玩家${seatId}` });
+    }
+    for (const player of players) await command(player.socket, "room:ready", { ready: true });
+    const started = players.map((player) => waitForSnapshot(player.socket, (value) => value.game !== undefined));
+    await command(host.socket, "room:start", {});
+    await Promise.all(started);
+
+    for (const player of players) {
+      const snapshot = lastSnapshot(player);
+      const selfSeat = snapshot.room.selfSeat;
+      expect(snapshot.game?.players.find((seat) => seat.seatId === selfSeat)?.hand).toHaveLength(8);
+      expect(
+        snapshot.game?.players
+          .filter((seat) => seat.seatId !== selfSeat)
+          .every((seat) => seat.hand === undefined)
+      ).toBe(true);
+    }
+  });
+
+  it("rejects stale game revisions and duplicate request ids", async () => {
+    const host = await connectClient(serverUrl, clients);
+    await command(host.socket, "room:create", { nickname: "甲" });
+    await command(host.socket, "room:fill-bots", {});
+    await command(host.socket, "room:ready", { ready: true });
+    const hostStarted = waitForSnapshot(host.socket, (value) => value.game !== undefined);
+    await command(host.socket, "room:start", {});
+    await hostStarted;
+    const snapshot = lastSnapshot(host);
+    const cardId = snapshot.game?.legalActions.find((action) => action.type === "game:attack")?.cardIds?.[0];
+    if (cardId === undefined) throw new Error("expected an opening attack");
+
+    const stale = await command(host.socket, "game:attack", { cardId }, snapshot.revision - 1);
+    expect(stale).toMatchObject({ ok: false, error: { code: "STALE_REVISION" } });
+
+    const illegal = await command(
+      host.socket,
+      "game:attack",
+      { cardId: "not-a-real-card" },
+      snapshot.revision
+    );
+    expect(illegal).toMatchObject({ ok: false, error: { code: "ILLEGAL_ACTION" } });
+    expect(lastSnapshot(host).revision).toBe(snapshot.revision);
+
+    const requestId = randomUUID();
+    const first = await emitRaw(host.socket, {
+      requestId,
+      expectedRevision: snapshot.revision,
+      type: "game:attack",
+      payload: { cardId }
+    });
+    const duplicate = await emitRaw(host.socket, {
+      requestId,
+      expectedRevision: snapshot.revision,
+      type: "game:attack",
+      payload: { cardId }
+    });
+    expect(first.ok).toBe(true);
+    expect(duplicate).toMatchObject({ ok: false, error: { code: "DUPLICATE_REQUEST" } });
+  });
 });
 
 async function connectClient(serverUrl: string, clients: TestClient[]): Promise<TestClient> {
@@ -125,6 +256,9 @@ async function connectClient(serverUrl: string, clients: TestClient[]): Promise<
   });
   const client: TestClient = { socket, snapshots: [] };
   clients.push(client);
+  socket.on("server:info", (serverInfo: { instanceId: string; persistentRooms: boolean }) => {
+    client.serverInfo = serverInfo;
+  });
   socket.on("state:snapshot", (snapshot: StateSnapshot) => {
     client.snapshots.push(snapshot);
   });
@@ -132,8 +266,18 @@ async function connectClient(serverUrl: string, clients: TestClient[]): Promise<
   return client;
 }
 
-function command(socket: ClientSocket, type: string, payload: unknown): Promise<CommandAck> {
-  return emitRaw(socket, { requestId: randomUUID(), type, payload });
+function command(
+  socket: ClientSocket,
+  type: string,
+  payload: unknown,
+  expectedRevision?: number
+): Promise<CommandAck> {
+  return emitRaw(socket, {
+    requestId: randomUUID(),
+    type,
+    payload,
+    ...(expectedRevision === undefined ? {} : { expectedRevision })
+  });
 }
 
 function emitRaw(socket: ClientSocket, value: unknown): Promise<CommandAck> {

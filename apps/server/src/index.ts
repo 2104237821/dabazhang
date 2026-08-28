@@ -11,6 +11,7 @@ export type {
 export { RoomCommandError, RoomManager } from "./room-manager.js";
 export type {
   RoomManagerOptions,
+  RoomChangedHandler,
   RoomMutationResult,
   SocketSnapshot,
   StartGameContext,
