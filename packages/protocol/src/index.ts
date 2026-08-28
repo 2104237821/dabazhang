@@ -106,6 +106,7 @@ export const clientCommandSchema = z.discriminatedUnion("type", [
   z.object({ ...commandBase, type: z.literal("room:start"), payload: z.object({}).strict() }).strict(),
   z.object({ ...commandBase, type: z.literal("room:leave"), payload: z.object({}).strict() }).strict(),
   z.object({ ...gameBase, type: z.literal("game:attack"), payload: z.object({ cardId }).strict() }).strict(),
+  z.object({ ...gameBase, type: z.literal("game:pass-attack"), payload: z.object({}).strict() }).strict(),
   z.object({ ...gameBase, type: z.literal("game:defend"), payload: z.object({ attackId, cardId }).strict() }).strict(),
   z.object({ ...gameBase, type: z.literal("game:take"), payload: z.object({}).strict() }).strict(),
   z.object({ ...gameBase, type: z.literal("game:stop-attack"), payload: z.object({}).strict() }).strict(),
