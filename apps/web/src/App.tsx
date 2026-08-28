@@ -12,6 +12,7 @@ import {
   validateRoomCode
 } from "./lobby.js";
 import type { LobbyClient, TablePosition } from "./lobby.js";
+import { GameDemoScreen } from "./gameTableComponents.js";
 
 type EntryMode = "create" | "join";
 
@@ -24,22 +25,26 @@ interface AppProps {
 
 export function App({ client = defaultClient }: AppProps) {
   const [room, setRoom] = useState<RoomView | null>(null);
+  const [gameDemoOpen, setGameDemoOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    document.title = room ? `房间 ${room.roomCode} · 打八张` : "打八张 · 四人对家牌局";
-  }, [room]);
+    document.title = gameDemoOpen ? "牌桌演示 · 打八张" : room ? `房间 ${room.roomCode} · 打八张` : "打八张 · 四人对家牌局";
+  }, [gameDemoOpen, room]);
 
   return (
     <>
       <div className="app-shell">
-        <SiteHeader inRoom={room !== null} onOpenRules={() => setRulesOpen(true)} />
-        {room ? (
+        <SiteHeader inRoom={room !== null || gameDemoOpen} onOpenRules={() => setRulesOpen(true)} />
+        {gameDemoOpen ? (
+          <GameDemoScreen onExit={() => setGameDemoOpen(false)} />
+        ) : room ? (
           <RoomScreen
             client={client}
             room={room}
             onRoomChange={setRoom}
+            onOpenGameDemo={() => setGameDemoOpen(true)}
             onLeave={() => {
               setRoom(null);
               setMessage("已离开演示房间");
@@ -49,6 +54,7 @@ export function App({ client = defaultClient }: AppProps) {
         ) : (
           <HomeScreen
             client={client}
+            onOpenGameDemo={() => setGameDemoOpen(true)}
             onEnterRoom={(nextRoom) => {
               setRoom(nextRoom);
               setMessage(`已进入房间 ${nextRoom.roomCode}`);
@@ -86,7 +92,11 @@ function SiteHeader({ inRoom, onOpenRules }: { inRoom: boolean; onOpenRules: () 
   );
 }
 
-function HomeScreen({ client, onEnterRoom }: { client: LobbyClient; onEnterRoom: (room: RoomView) => void }) {
+function HomeScreen({ client, onEnterRoom, onOpenGameDemo }: {
+  client: LobbyClient;
+  onEnterRoom: (room: RoomView) => void;
+  onOpenGameDemo: () => void;
+}) {
   const [mode, setMode] = useState<EntryMode>("create");
   const [nickname, setNickname] = useState("");
   const [roomCode, setRoomCode] = useState("");
@@ -129,6 +139,9 @@ function HomeScreen({ client, onEnterRoom }: { client: LobbyClient; onEnterRoom:
           <li><SuitToken suit="♥" /> 主花色攻防</li>
           <li><SuitToken suit="♣" /> 真人与机器人混合</li>
         </ul>
+        <button className="table-demo-link" type="button" onClick={onOpenGameDemo}>
+          查看脱敏牌桌演示 <span aria-hidden="true">→</span>
+        </button>
       </section>
 
       <section className="entry-panel" aria-labelledby="entry-title">
@@ -237,11 +250,12 @@ interface RoomScreenProps {
   client: LobbyClient;
   room: RoomView;
   onRoomChange: (room: RoomView) => void;
+  onOpenGameDemo: () => void;
   onLeave: () => void;
   announce: (message: string) => void;
 }
 
-function RoomScreen({ client, room, onRoomChange, onLeave, announce }: RoomScreenProps) {
+function RoomScreen({ client, room, onRoomChange, onOpenGameDemo, onLeave, announce }: RoomScreenProps) {
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const self = getPlayerAtSeat(room, room.selfSeat);
   const isHost = room.selfSeat === room.hostSeat;
@@ -320,7 +334,8 @@ function RoomScreen({ client, room, onRoomChange, onLeave, announce }: RoomScree
               <div className="table-placeholder">
                 <span className="trump-placeholder" aria-hidden="true">主</span>
                 <h2>房间已开始</h2>
-                <p>真实发牌与攻防桌面将在牌桌模块接入。</p>
+                <p>服务端接入前，可先查看脱敏状态驱动的牌桌。</p>
+                <button type="button" onClick={onOpenGameDemo}>进入牌桌演示</button>
               </div>
             ) : (
               <>
