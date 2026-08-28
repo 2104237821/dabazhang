@@ -204,6 +204,40 @@ describe("game server", () => {
           .every((seat) => seat.hand === undefined)
       ).toBe(true);
     }
+
+    const hostAttack = waitForSnapshots(players, (value) => value.game?.phase === "await-defense");
+    await command(host.socket, "game:attack", { cardId: "heart-3" }, lastSnapshot(host).revision);
+    await hostAttack;
+    const defender = players[1];
+    if (defender === undefined) throw new Error("missing defender");
+    const attackId = lastSnapshot(defender).game?.table[0]?.attackId;
+    if (attackId === undefined) throw new Error("missing attack id");
+    const defended = waitForSnapshots(players, (value) => value.game?.phase === "await-continuation");
+    await command(
+      defender.socket,
+      "game:defend",
+      { attackId, cardId: "heart-4" },
+      lastSnapshot(defender).revision
+    );
+    await defended;
+    const assister = players[2];
+    if (assister === undefined) throw new Error("missing assister");
+    const proposed = waitForSnapshots(players, (value) => value.game?.phase === "await-assist-approval");
+    await command(
+      assister.socket,
+      "game:assist-propose",
+      { cardId: "club-4" },
+      lastSnapshot(assister).revision
+    );
+    await proposed;
+
+    expect(lastSnapshot(host).game?.assistProposal).toMatchObject({
+      proposer: 2,
+      card: { cardId: "club-4" }
+    });
+    for (const player of players.slice(1)) {
+      expect(lastSnapshot(player).game).not.toHaveProperty("assistProposal");
+    }
   });
 
   it("rejects stale game revisions and duplicate request ids", async () => {
@@ -313,4 +347,11 @@ function waitForSnapshot(
     };
     socket.on("state:snapshot", listener);
   });
+}
+
+async function waitForSnapshots(
+  clients: TestClient[],
+  predicate: (snapshot: StateSnapshot) => boolean
+): Promise<StateSnapshot[]> {
+  return Promise.all(clients.map((client) => waitForSnapshot(client.socket, predicate)));
 }

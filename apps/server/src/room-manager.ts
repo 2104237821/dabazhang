@@ -526,6 +526,10 @@ export class RoomManager {
     if (state === undefined) throw new Error("A game view requires game state");
     const view = buildCorePlayerView(state, selfSeat);
     const deadline = this.visibleDecisionDeadline(room);
+    const assistProposal =
+      view.phase.type === "await-assist-approval" ? view.phase.proposal : undefined;
+    const assistCard =
+      assistProposal === undefined ? undefined : state.cardsById[assistProposal.cardId];
     return {
       revision: room.revision,
       phase: toProtocolPhase(view.phase.type),
@@ -543,6 +547,15 @@ export class RoomManager {
         attack: toCardView(pair.attack.card, view.trumpSuit),
         ...(pair.defense === undefined ? {} : { defense: toCardView(pair.defense.card, view.trumpSuit) })
       })),
+      ...(assistProposal === undefined || assistCard === undefined
+        ? {}
+        : {
+            assistProposal: {
+              proposalId: assistProposal.proposalId,
+              proposer: assistProposal.player,
+              card: toCardView(assistCard, view.trumpSuit)
+            }
+          }),
       finishedOrder: [...view.finishedOrder],
       ...(view.winner === undefined ? {} : { winner: view.winner }),
       legalActions: view.legalActions.map((action) => toLegalActionView(action, view)),
