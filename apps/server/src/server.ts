@@ -15,6 +15,7 @@ import {
 } from "./room-manager.js";
 
 type CommandAckCallback = (ack: CommandAck) => void;
+const MAX_RECENT_REQUEST_IDS = 4_096;
 
 export interface CreateGameServerOptions {
   logger?: FastifyServerOptions["logger"];
@@ -46,11 +47,15 @@ export function createGameServer(options: CreateGameServerOptions = {}): GameSer
     maxHttpBufferSize: 32 * 1024
   });
   const rooms = options.roomManager ?? new RoomManager(options.roomManagerOptions);
+  rooms.setRoomChangedHandler((roomCode) => broadcastRoom(io, rooms, roomCode));
+  const instanceId = randomUUID();
+  const recentRequestIds = new Map<string, true>();
 
   app.get("/healthz", async () => ({ status: "ok" }));
   app.get("/readyz", async () => ({ status: "ready", rooms: rooms.getRoomCount() }));
 
   io.on("connection", (socket) => {
+    socket.emit("server:info", { instanceId, persistentRooms: false });
     socket.on("command", (raw: unknown, callback?: CommandAckCallback) => {
       void handleCommand(socket, raw, callback);
     });
@@ -80,6 +85,7 @@ export function createGameServer(options: CreateGameServerOptions = {}): GameSer
         return;
       }
       closed = true;
+      rooms.close();
       await new Promise<void>((resolve) => {
         io.close(() => resolve());
       });
@@ -104,6 +110,16 @@ export function createGameServer(options: CreateGameServerOptions = {}): GameSer
       });
       return;
     }
+
+    if (recentRequestIds.has(parsed.data.requestId)) {
+      sendAck(socket, callback, {
+        requestId: parsed.data.requestId,
+        ok: false,
+        error: { code: "DUPLICATE_REQUEST", message: "该请求已经处理过" }
+      });
+      return;
+    }
+    rememberRequestId(recentRequestIds, parsed.data.requestId);
 
     try {
       const result = await executeCommand(socket.id, parsed.data);
@@ -149,6 +165,7 @@ export function createGameServer(options: CreateGameServerOptions = {}): GameSer
       case "room:leave":
         return rooms.leaveRoom(socketId);
       case "game:attack":
+      case "game:pass-attack":
       case "game:defend":
       case "game:take":
       case "game:stop-attack":
@@ -156,10 +173,18 @@ export function createGameServer(options: CreateGameServerOptions = {}): GameSer
       case "game:assist-decide":
       case "game:exchange-trump-two":
       case "game:decline-trump-two":
+        return rooms.executeGameCommand(socketId, command);
       case "match:play-again":
-        throw new RoomCommandError("ILLEGAL_ACTION", "游戏规则引擎尚未接入");
+        return rooms.playAgain(socketId);
     }
   }
+}
+
+function rememberRequestId(requestIds: Map<string, true>, requestId: string): void {
+  requestIds.set(requestId, true);
+  if (requestIds.size <= MAX_RECENT_REQUEST_IDS) return;
+  const oldest = requestIds.keys().next().value;
+  if (oldest !== undefined) requestIds.delete(oldest);
 }
 
 function broadcastRoom(
