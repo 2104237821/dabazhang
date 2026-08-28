@@ -1,1 +1,1 @@
-export const BOT_PENDING_IMPLEMENTATION = true;
+export * from "./strategy.js";
