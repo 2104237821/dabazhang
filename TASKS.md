@@ -11,11 +11,11 @@
 | T04 | DONE | T01 | Kuhn | `apps/server` 房间与会话 | task/T04-server-room / `.worktrees/T04` | server tests | 102a30f | 通过 |
 | T05 | DONE | T01 | Hume | `apps/web` 页面壳 | task/T05-web-shell / `.worktrees/T05` | web tests + build | 3359ec7 | 通过 |
 | T06 | DONE | T03 | 主协调代理 | `packages/bot` | task/T06-bot / `.worktrees/T06` | bot tests | 28ccfe0 | 通过，只使用脱敏视图和合法动作 |
-| T07 | IN_PROGRESS | T03,T04,T06 | 主协调代理（接管 Kuhn） | `apps/server` 实时与恢复 | task/T07-server-realtime / `.worktrees/T07` | server integration tests | 待填 | 待复核 |
+| T07 | DONE | T03,T04,T06 | 主协调代理（接管 Kuhn） | `apps/server` 实时与恢复 | task/T07-server-realtime / `.worktrees/T07` | server integration tests | b0ff505 | 通过，含规格与质量双重复核 |
 | T08 | DONE | T05 | Hume | `apps/web` 四方牌桌 | task/T08-web-table / `.worktrees/T08` | web tests + screenshots | 2fb9d82 | 通过，四种目标尺寸与键盘操作均已实测 |
 | T09 | IN_PROGRESS | T03,T08 | Hume | `apps/web` 游戏交互 | task/T09-web-actions / `.worktrees/T09` | web tests | 待填 | 待复核 |
 | T10 | BLOCKED | T06,T07,T09 | 主协调代理 | 跨模块集成 | codex/v1-web-game | integration + build | 待填 | 待复核 |
-| T11 | BLOCKED | T07 | Kuhn | 服务安全与部署 | task/T11-deploy | Docker + health smoke | 待填 | 待复核 |
+| T11 | IN_PROGRESS | T07 | Kuhn + 主协调代理 | `apps/server`、部署文档；根部署配置由主协调代理维护 | task/T11-deploy / `.worktrees/T11` | Docker + health smoke | 待填 | 待复核 |
 | T12 | BLOCKED | T10 | Hume | E2E、视觉、无障碍 | task/T12-qa | Playwright + a11y | 待填 | 待复核 |
 | T13 | BLOCKED | T11,T12 | 主协调代理 | 发布与总验收 | codex/v1-web-game | full CI | 待填 | 待复核 |
 
