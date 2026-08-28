@@ -59,27 +59,41 @@ describe("RoomManager realtime control", () => {
     expect(restored.game?.table).toHaveLength(0);
   });
 
-  it("takes over at 60 seconds and returns control after the in-flight bot step", async () => {
+  it("reclaims immediately when the takeover bot decision is queued but has not run", async () => {
     const { manager, resumeToken } = await createStartedManager(managers, { botDelayMs: () => 10 });
-    const before = manager.getSnapshotForSocket("host");
     await manager.disconnect("host");
     await vi.advanceTimersByTimeAsync(60_000);
 
-    const takenOver = manager.getConnectedSnapshots("ABC234");
-    expect(takenOver).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(20);
     await manager.resumeRoom("host-restored", "ABC234", resumeToken);
-    expect(manager.getSnapshotForSocket("host-restored").room.players[0]).toMatchObject({
+    const restored = manager.getSnapshotForSocket("host-restored");
+    expect(restored.room.players[0]).toMatchObject({
       online: true,
-      controller: "bot-takeover"
+      controller: "human"
+    });
+    expect(restored.game).toMatchObject({
+      phase: "await-opening-attack",
+      table: [],
+      decisionDeadline: 106_000
     });
 
     await vi.advanceTimersByTimeAsync(10);
+    const afterOriginalBotDelay = manager.getSnapshotForSocket("host-restored");
+    expect(afterOriginalBotDelay.revision).toBe(restored.revision);
+    expect(afterOriginalBotDelay.game?.table).toEqual(restored.game?.table);
+  });
+
+  it("does not roll back a takeover bot action that completed before resume", async () => {
+    const { manager, resumeToken } = await createStartedManager(managers, { botDelayMs: () => 10 });
+    await manager.disconnect("host");
+    await vi.advanceTimersByTimeAsync(60_010);
+
+    await manager.resumeRoom("host-restored", "ABC234", resumeToken);
     const restored = manager.getSnapshotForSocket("host-restored");
-    expect(restored.revision).toBeGreaterThan(before.revision);
     expect(restored.room.players[0]).toMatchObject({ online: true, controller: "human" });
-    expect(restored.game?.table).toHaveLength(2);
-    expect(restored.game?.table[0]?.defense).toBeDefined();
+    expect(restored.game).toMatchObject({
+      phase: "await-defense",
+      table: [{ attacker: 0 }]
+    });
   });
 
   it("can finish a mixed game through timeout steps and starts the rematch with the first finisher", async () => {

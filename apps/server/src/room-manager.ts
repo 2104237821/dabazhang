@@ -50,7 +50,6 @@ interface HumanSeat {
   controller: HumanController;
   graceDeadline?: number;
   graceTimer?: TimerHandle;
-  reclaimAfterBotStep?: boolean;
 }
 
 interface BotSeat {
@@ -260,11 +259,9 @@ export class RoomManager {
         presenceChanged = true;
       } else if (seat.controller === "bot-takeover") {
         if (room.decision?.seatId === seat.seatId && room.decision.mode === "bot") {
-          seat.reclaimAfterBotStep = true;
-        } else {
-          seat.controller = "human";
-          delete seat.reclaimAfterBotStep;
+          this.clearDecision(room);
         }
+        seat.controller = "human";
         presenceChanged = true;
       }
       if (presenceChanged) room.revision += 1;
@@ -401,7 +398,6 @@ export class RoomManager {
         this.removeSession(session);
         seat.online = false;
         seat.controller = "bot-takeover";
-        delete seat.reclaimAfterBotStep;
         room.revision += 1;
         this.transferHost(room, seat.seatId);
         this.reconcileDecision(room);
@@ -434,7 +430,6 @@ export class RoomManager {
       if (room === undefined || seat?.kind !== "human") return undefined;
       seat.online = false;
       seat.controller = "human-grace";
-      delete seat.reclaimAfterBotStep;
       this.scheduleGraceTimer(room, seat);
       room.revision += 1;
       this.reconcileDecision(room);
@@ -637,36 +632,20 @@ export class RoomManager {
       }
       const command = chooseBotCommand(buildCorePlayerView(room.game, decision.seatId));
       if (command === undefined) {
-        if (this.reclaimHumanAfterBotStep(seat)) {
-          room.revision += 1;
-          this.reconcileDecision(room);
-        }
         this.notifyRoomChanged(roomCode);
         return;
       }
       const applied = dispatch(room.game, command);
       if (!applied.ok) {
-        if (this.reclaimHumanAfterBotStep(seat)) {
-          room.revision += 1;
-          this.reconcileDecision(room);
-        }
         this.notifyRoomChanged(roomCode);
         return;
       }
       room.game = applied.value.state;
       room.revision += 1;
       if (room.game.phase.type === "finished") room.status = "post-game";
-      this.reclaimHumanAfterBotStep(seat);
       this.reconcileDecision(room);
       this.notifyRoomChanged(roomCode);
     });
-  }
-
-  private reclaimHumanAfterBotStep(seat: RoomSeat): boolean {
-    if (seat.kind !== "human" || seat.reclaimAfterBotStep !== true) return false;
-    seat.controller = "human";
-    delete seat.reclaimAfterBotStep;
-    return true;
   }
 
   private clearDecision(room: RoomState): void {
