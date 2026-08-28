@@ -35,6 +35,12 @@ export interface AttackPairView {
   defense?: CardView;
 }
 
+export interface AssistProposalView {
+  proposalId: string;
+  proposer: SeatId;
+  card: CardView;
+}
+
 export type GamePhase =
   | "await-opening-attack"
   | "await-defense"
@@ -62,6 +68,8 @@ export interface GameViewState {
   defender: SeatId;
   players: PlayerView[];
   table: AttackPairView[];
+  /** Only present in the primary attacker's sanitized view. */
+  assistProposal?: AssistProposalView;
   finishedOrder: SeatId[];
   winner?: TeamId;
   legalActions: LegalActionView[];
