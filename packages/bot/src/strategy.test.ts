@@ -112,4 +112,29 @@ describe("bot strategy", () => {
       expect(dispatch(state, command).ok).toBe(true);
     }
   });
+
+  it("completes full games with four bots without a deadlock", () => {
+    for (let seed = 0; seed < 20; seed += 1) {
+      let state = createInitialGame({ rng: seededRandom(seed) });
+      let steps = 0;
+      while (state.phase.type !== "finished" && steps < 2_000) {
+        const actor =
+          state.phase.type === "await-main-two-decision"
+            ? state.phase.player
+            : state.phase.type === "await-defense"
+              ? state.defender
+              : state.primaryAttacker;
+        const command = chooseBotCommand(buildPlayerView(state, actor));
+        expect(command, `seed ${seed}, phase ${state.phase.type}`).toBeDefined();
+        if (command === undefined) break;
+        const result = dispatch(state, command);
+        expect(result.ok, `seed ${seed}, command ${command.type}`).toBe(true);
+        if (!result.ok) break;
+        state = result.value.state;
+        steps += 1;
+      }
+      expect(state.phase.type, `seed ${seed} stopped after ${steps} steps`).toBe("finished");
+      expect(state.winner).toBeDefined();
+    }
+  });
 });
