@@ -31,7 +31,7 @@ export type ObservedPhase =
       readonly player: SeatId;
       readonly context: MainTwoDecisionContext;
     }
-  | { readonly type: "post-round-refill"; readonly nextSeat: SeatId }
+  | { readonly type: "post-round-refill" }
   | { readonly type: "finished" };
 
 export interface PlayerObservation {
@@ -76,9 +76,15 @@ function observePair(state: GameState, pair: AttackPair): ObservedAttackPair {
 }
 
 function observePhase(state: GameState, selfSeat: SeatId): ObservedPhase {
-  if (state.phase.type !== "await-assist-approval") return state.phase;
-  if (selfSeat === state.primaryAttacker) return state.phase;
-  return { type: "await-assist-approval" };
+  if (state.phase.type === "await-assist-approval") {
+    if (selfSeat === state.primaryAttacker) return state.phase;
+    return { type: "await-assist-approval" };
+  }
+  if (state.phase.type === "await-main-two-decision") {
+    return { type: state.phase.type, player: state.phase.player, context: state.phase.context };
+  }
+  if (state.phase.type === "post-round-refill") return { type: state.phase.type };
+  return state.phase;
 }
 
 export function observeGame(state: GameState, selfSeat: SeatId): PlayerObservation {

@@ -88,11 +88,15 @@ export function createInitialGame(options: CreateInitialGameOptions): GameState 
   );
   const cardsById = createCardRegistry(preparedDeck);
   const defender = nextSeatCounterClockwise(firstAttacker);
+  const mainTwoCardId = `${indicator.suit}-2`;
+  const mainTwoOwner = SEATS.find((seat) => dealt.hands[seat].includes(mainTwoCardId));
+  const swapEnabled = indicator.rank !== 2;
 
   return {
     revision: 0,
     actionSequence: 0,
     handNumber: options.handNumber ?? 1,
+    roundNumber: 1,
     cardsById,
     players: createPlayers(dealt.hands),
     trumpSuit: indicator.suit,
@@ -101,16 +105,36 @@ export function createInitialGame(options: CreateInitialGameOptions): GameState 
     drawPile: dealt.drawPile,
     table: [],
     discardPile: [],
-    phase: { type: "await-opening-attack" },
+    phase:
+      swapEnabled && mainTwoOwner !== undefined
+        ? {
+            type: "await-main-two-decision",
+            player: mainTwoOwner,
+            context: "deal",
+            resume: { type: "opening-attack" }
+          }
+        : { type: "await-opening-attack" },
     dealStartSeat,
     primaryAttacker: firstAttacker,
     defender,
     mainTwoSwap: {
-      enabled: indicator.rank !== 2,
+      enabled: swapEnabled,
       used: false,
       currentBottomCardId: indicator.id
     },
     finishedOrder: [],
     emptiedAtActionSequence: {}
   };
+}
+
+export function createNextHand(previousState: GameState, rng: RandomSource): GameState {
+  const previousHandFirstFinisher = previousState.finishedOrder[0];
+  if (previousHandFirstFinisher === undefined || previousState.phase.type !== "finished") {
+    throw new Error("A next hand requires a finished previous hand with a first finisher");
+  }
+  return createInitialGame({
+    rng,
+    handNumber: previousState.handNumber + 1,
+    previousHandFirstFinisher
+  });
 }
