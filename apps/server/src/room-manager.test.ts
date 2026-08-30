@@ -16,6 +16,36 @@ function createManager(startGame = vi.fn()) {
 }
 
 describe("RoomManager", () => {
+  it("releases an abandoned lobby after the disconnect grace period", async () => {
+    vi.useFakeTimers();
+    const roomCodes = ["ABC234", "DEF567", "GHJ678"];
+    let roomCodeIndex = 0;
+    const manager = new RoomManager({
+      codeGenerator: () => roomCodes[roomCodeIndex++] ?? "KLM789",
+      disconnectGraceMs: 60_000,
+      maxActiveRooms: 1,
+      tokenGenerator: () => `resume-token-${String(roomCodeIndex).padStart(32, "0")}`
+    });
+
+    try {
+      await manager.createRoom("first", "甲");
+      await expect(manager.createRoom("blocked", "乙")).rejects.toMatchObject({
+        code: "RATE_LIMITED"
+      });
+      await manager.disconnect("first");
+      await vi.advanceTimersByTimeAsync(59_999);
+      expect(manager.getRoomCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(manager.getRoomCount()).toBe(0);
+      await expect(manager.createRoom("replacement", "乙")).resolves.toMatchObject({
+        roomCode: "DEF567"
+      });
+    } finally {
+      manager.close();
+      vi.useRealTimers();
+    }
+  });
+
   it("creates a room with a valid six-character code and a private resume token", async () => {
     const { manager } = createManager();
 
