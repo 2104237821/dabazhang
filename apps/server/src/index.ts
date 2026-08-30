@@ -1,12 +1,17 @@
+import { randomInt } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
-import { createGameServer } from "./server.js";
+import { loadServerConfig } from "./config.js";
+import { createGameServer, registerShutdownSignals } from "./server.js";
 
-export { createGameServer } from "./server.js";
+export { loadServerConfig } from "./config.js";
+export type { ServerConfig } from "./config.js";
+export { createGameServer, registerShutdownSignals } from "./server.js";
 export type {
   CreateGameServerOptions,
   GameServer,
-  ListenOptions
+  ListenOptions,
+  ShutdownSignalEmitter
 } from "./server.js";
 export { RoomCommandError, RoomManager } from "./room-manager.js";
 export type {
@@ -21,16 +26,26 @@ export type {
 
 const entrypoint = process.argv[1];
 if (entrypoint !== undefined && fileURLToPath(import.meta.url) === entrypoint) {
+  const config = loadServerConfig(process.env);
   const server = createGameServer({
     logger: true,
-    ...(process.env.PUBLIC_ORIGIN === undefined
-      ? {}
-      : { allowedOrigin: process.env.PUBLIC_ORIGIN })
+    commandRateLimit: {
+      max: config.commandRateLimitMax,
+      windowMs: config.commandRateLimitWindowMs
+    },
+    enableHsts: config.enableHsts,
+    roomManagerOptions: {
+      decisionTimeoutMs: config.actionTimeoutMs,
+      disconnectGraceMs: config.disconnectGraceMs,
+      botDelayMs: () => randomInt(config.botDelayMinMs, config.botDelayMaxMs + 1)
+    },
+    ...(config.publicOrigin === undefined ? {} : { allowedOrigin: config.publicOrigin }),
+    ...(config.staticRoot === undefined ? {} : { staticRoot: config.staticRoot })
   });
-  const parsedPort = Number.parseInt(process.env.PORT ?? "3000", 10);
-  const port = Number.isSafeInteger(parsedPort) && parsedPort > 0 ? parsedPort : 3000;
+  const disposeSignals = registerShutdownSignals(server);
 
-  server.listen({ host: "0.0.0.0", port }).catch((error: unknown) => {
+  server.listen({ host: config.host, port: config.port }).catch((error: unknown) => {
+    disposeSignals();
     console.error(error);
     process.exitCode = 1;
   });
