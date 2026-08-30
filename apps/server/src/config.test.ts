@@ -13,6 +13,7 @@ describe("server configuration", () => {
       disconnectGraceMs: 60_000,
       enableHsts: false,
       host: "0.0.0.0",
+      maxActiveRooms: 500,
       nodeEnv: "development",
       port: 3_000,
       publicOrigin: undefined,
@@ -30,6 +31,7 @@ describe("server configuration", () => {
         COMMAND_RATE_LIMIT_WINDOW_MS: "5000",
         DISCONNECT_GRACE_MS: "45000",
         HOST: "127.0.0.1",
+        MAX_ACTIVE_ROOMS: "250",
         NODE_ENV: "production",
         PORT: "8080",
         PUBLIC_ORIGIN: "https://cards.example.com",
@@ -44,6 +46,7 @@ describe("server configuration", () => {
       disconnectGraceMs: 45_000,
       enableHsts: true,
       host: "127.0.0.1",
+      maxActiveRooms: 250,
       nodeEnv: "production",
       port: 8_080,
       publicOrigin: "https://cards.example.com",
@@ -58,6 +61,7 @@ describe("server configuration", () => {
     [{ DISCONNECT_GRACE_MS: "nope" }, "DISCONNECT_GRACE_MS"],
     [{ BOT_DELAY_MIN_MS: "1000", BOT_DELAY_MAX_MS: "500" }, "BOT_DELAY_MAX_MS"],
     [{ COMMAND_RATE_LIMIT_MAX: "0" }, "COMMAND_RATE_LIMIT_MAX"],
+    [{ MAX_ACTIVE_ROOMS: "0" }, "MAX_ACTIVE_ROOMS"],
     [{ PUBLIC_ORIGIN: "https://cards.example.com/path" }, "PUBLIC_ORIGIN"],
     [{ PUBLIC_ORIGIN: "*" }, "PUBLIC_ORIGIN"]
   ])("rejects invalid or unsafe configuration %j", (environment, field) => {

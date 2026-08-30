@@ -11,6 +11,7 @@ export interface ServerConfig {
   disconnectGraceMs: number;
   enableHsts: boolean;
   host: string;
+  maxActiveRooms: number;
   nodeEnv: "development" | "production" | "test";
   port: number;
   publicOrigin?: string;
@@ -57,6 +58,7 @@ export function loadServerConfig(environment: Environment): ServerConfig {
     ),
     enableHsts: nodeEnv === "production",
     host: parseHost(environment.HOST),
+    maxActiveRooms: parseInteger(environment, "MAX_ACTIVE_ROOMS", 500, 1, 100_000),
     nodeEnv,
     port: parseInteger(environment, "PORT", 3_000, 1, 65_535),
     ...(publicOrigin === undefined ? {} : { publicOrigin }),

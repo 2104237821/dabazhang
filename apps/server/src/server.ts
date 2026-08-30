@@ -138,7 +138,7 @@ export function createGameServer(options: CreateGameServerOptions = {}): GameSer
     });
   });
 
-  let closed = false;
+  let closePromise: Promise<void> | undefined;
   const server: GameServer = {
     app,
     io,
@@ -155,21 +155,20 @@ export function createGameServer(options: CreateGameServerOptions = {}): GameSer
       rooms.close();
       io.emit("server:shutdown", { reason, reconnect: false });
     },
-    async close() {
-      if (closed) {
-        return;
-      }
-      closed = true;
-      server.beginShutdown();
-      await new Promise<void>((resolve) => {
-        io.close(() => resolve());
-      });
-      if (app.server.listening) {
-        await app.close();
-      }
+    close() {
+      closePromise ??= closeServerResources();
+      return closePromise;
     }
   };
   return server;
+
+  async function closeServerResources(): Promise<void> {
+    server.beginShutdown();
+    await new Promise<void>((resolve) => {
+      io.close(() => resolve());
+    });
+    await app.close();
+  }
 
   async function handleCommand(
     socket: Socket,

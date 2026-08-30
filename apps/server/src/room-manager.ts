@@ -32,6 +32,7 @@ import type {
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const ROOM_CODE_LENGTH = 6;
 const MAX_ROOM_CODE_ATTEMPTS = 1_000;
+const DEFAULT_MAX_ACTIVE_ROOMS = 500;
 const DEFAULT_DECISION_TIMEOUT_MS = 45_000;
 const DEFAULT_DISCONNECT_GRACE_MS = 60_000;
 
@@ -111,6 +112,7 @@ export interface RoomManagerOptions {
   botDelayMs?: () => number;
   decisionTimeoutMs?: number;
   disconnectGraceMs?: number;
+  maxActiveRooms?: number;
   roomChanged?: RoomChangedHandler;
 }
 
@@ -150,6 +152,7 @@ export class RoomManager {
   private readonly botDelayMs: () => number;
   private readonly decisionTimeoutMs: number;
   private readonly disconnectGraceMs: number;
+  private readonly maxActiveRooms: number;
   private roomChanged: RoomChangedHandler;
   private joinedOrder = 0;
   private closed = false;
@@ -163,6 +166,10 @@ export class RoomManager {
     this.botDelayMs = options.botDelayMs ?? (() => randomInt(500, 901));
     this.decisionTimeoutMs = options.decisionTimeoutMs ?? DEFAULT_DECISION_TIMEOUT_MS;
     this.disconnectGraceMs = options.disconnectGraceMs ?? DEFAULT_DISCONNECT_GRACE_MS;
+    this.maxActiveRooms = options.maxActiveRooms ?? DEFAULT_MAX_ACTIVE_ROOMS;
+    if (!Number.isSafeInteger(this.maxActiveRooms) || this.maxActiveRooms < 1) {
+      throw new Error("maxActiveRooms must be a positive integer");
+    }
     this.roomChanged = options.roomChanged ?? (() => undefined);
   }
 
@@ -173,6 +180,9 @@ export class RoomManager {
   async createRoom(socketId: string, nicknameInput: string): Promise<RoomMutationResult> {
     this.assertOpen();
     this.assertSocketIsFree(socketId);
+    if (this.rooms.size >= this.maxActiveRooms) {
+      throw new RoomCommandError("RATE_LIMITED", "活跃房间数量已达上限，请稍后再试");
+    }
     const nickname = normalizeNickname(nicknameInput);
     const roomCode = this.createUniqueRoomCode();
     const resumeToken = this.tokenGenerator();
@@ -576,6 +586,19 @@ export class RoomManager {
         const currentSeat = currentRoom?.seats[seat.seatId];
         if (currentRoom === undefined || currentSeat?.kind !== "human" || currentSeat.online || currentSeat.controller !== "human-grace" || currentSeat.graceDeadline !== deadline) return;
         this.clearGraceTimer(currentSeat);
+        if (currentRoom.status === "lobby") {
+          const session = this.sessionsById.get(currentSeat.sessionId);
+          if (session !== undefined) this.removeSession(session);
+          currentRoom.seats[currentSeat.seatId] = undefined;
+          if (this.humanSeats(currentRoom).length === 0) {
+            this.deleteRoom(currentRoom);
+          } else {
+            this.transferHost(currentRoom, currentSeat.seatId);
+            currentRoom.revision += 1;
+          }
+          this.notifyRoomChanged(currentRoom.roomCode);
+          return;
+        }
         currentSeat.controller = "bot-takeover";
         this.transferHost(currentRoom, currentSeat.seatId);
         currentRoom.revision += 1;

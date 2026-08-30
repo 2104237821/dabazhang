@@ -37,6 +37,7 @@ if (entrypoint !== undefined && fileURLToPath(import.meta.url) === entrypoint) {
     roomManagerOptions: {
       decisionTimeoutMs: config.actionTimeoutMs,
       disconnectGraceMs: config.disconnectGraceMs,
+      maxActiveRooms: config.maxActiveRooms,
       botDelayMs: () => randomInt(config.botDelayMinMs, config.botDelayMaxMs + 1)
     },
     ...(config.publicOrigin === undefined ? {} : { allowedOrigin: config.publicOrigin }),

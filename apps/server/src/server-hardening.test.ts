@@ -77,6 +77,23 @@ describe("production HTTP surface", () => {
 });
 
 describe("command admission and shutdown", () => {
+  it("caps active rooms across fresh socket connections", async () => {
+    const server = createGameServer({ roomManagerOptions: { maxActiveRooms: 2 } });
+    servers.push(server);
+    const url = await server.listen({ host: "127.0.0.1", port: 0 });
+    const first = await connect(url);
+    const second = await connect(url);
+    const third = await connect(url);
+
+    expect(await command(first, "room:create", { nickname: "甲" })).toMatchObject({ ok: true });
+    expect(await command(second, "room:create", { nickname: "乙" })).toMatchObject({ ok: true });
+    expect(await command(third, "room:create", { nickname: "丙" })).toMatchObject({
+      error: { code: "RATE_LIMITED" },
+      ok: false
+    });
+    expect(server.rooms.getRoomCount()).toBe(2);
+  });
+
   it("rejects an unapproved WebSocket origin and accepts the configured public origin", async () => {
     const server = createGameServer({ allowedOrigin: "https://cards.example.com" });
     servers.push(server);
@@ -152,6 +169,32 @@ describe("command admission and shutdown", () => {
     expect(signals.listenerCount("SIGINT")).toBe(0);
     dispose();
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("runs Fastify onClose once and makes concurrent callers wait for the same close", async () => {
+    const server = createGameServer();
+    servers.push(server);
+    let releaseHook: (() => void) | undefined;
+    const hookGate = new Promise<void>((resolve) => {
+      releaseHook = resolve;
+    });
+    const onClose = vi.fn(async () => hookGate);
+    server.app.addHook("onClose", onClose);
+    await server.listen({ host: "127.0.0.1", port: 0 });
+
+    const firstClose = server.close();
+    const secondClose = server.close();
+    expect(secondClose).toBe(firstClose);
+    let secondSettled = false;
+    void secondClose.then(() => {
+      secondSettled = true;
+    });
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(secondSettled).toBe(false);
+
+    releaseHook?.();
+    await Promise.all([firstClose, secondClose]);
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });
 
