@@ -12,7 +12,7 @@ import {
   validateRoomCode
 } from "./lobby.js";
 import type { LobbyClient, TablePosition } from "./lobby.js";
-import { GameDemoScreen } from "./gameTableComponents.js";
+import { GameDemoScreen } from "./gameInteraction.js";
 
 type EntryMode = "create" | "join";
 

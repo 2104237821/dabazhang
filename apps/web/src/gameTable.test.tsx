@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { CardView } from "@dabazhang/protocol";
+import type { AttackPairView, CardView } from "@dabazhang/protocol";
 import { AttackPairGrid, Card, GameTable, OpponentHand } from "./gameTableComponents.js";
 import {
   demoGameScenarios,
@@ -12,6 +12,10 @@ import {
   playerStatusLabel,
   rankLabel
 } from "./gameTable.js";
+
+function uncover(pair: AttackPairView): AttackPairView {
+  return { attackId: pair.attackId, attacker: pair.attacker, attack: pair.attack };
+}
 
 describe("card presentation", () => {
   it("creates complete Chinese card labels", () => {
@@ -42,6 +46,24 @@ describe("card presentation", () => {
     expect(html).toContain("role=\"list\"");
     expect(html).toContain("大巴掌用梅花7进攻，已被梅花J防住");
     expect(html).toContain("南枝用方块J进攻，已被红桃4，主牌防住");
+  });
+
+  it("renders an explicit selectable target for an uncovered legal defense", () => {
+    const active = demoGameScenarios["active-round"].game;
+    const pairs = active.table.map((pair) => pair.attackId === "attack-3" ? uncover(pair) : pair);
+    const html = renderToStaticMarkup(
+      <AttackPairGrid
+        pairs={pairs}
+        players={active.players}
+        defendableAttackIds={new Set(["attack-3"])}
+        selectedAttackId="attack-3"
+        onSelectDefenseTarget={() => undefined}
+      />
+    );
+
+    expect(html).toContain("选择第 3 组作为防守目标");
+    expect(html).toContain("aria-pressed=\"true\"");
+    expect(html).toContain("已选防守目标");
   });
 });
 

@@ -1,4 +1,5 @@
 import type { CardView, GamePhase, GameViewState, PlayerView, Rank, Suit } from "@dabazhang/protocol";
+import { getInteractiveCardIds } from "./gameClient.js";
 
 export type CardFocusKey = "ArrowLeft" | "ArrowRight" | "Home" | "End";
 export type DemoScenarioId = "active-round" | "late-game";
@@ -37,7 +38,7 @@ export function describeCard(card: CardView): string {
 }
 
 export function getSelectableCardIds(game: GameViewState): Set<string> {
-  return new Set(game.legalActions.flatMap((action) => action.cardIds ?? []));
+  return getInteractiveCardIds(game);
 }
 
 export function getNextCardFocusIndex(current: number, key: CardFocusKey, cardCount: number): number {

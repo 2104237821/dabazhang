@@ -4,7 +4,6 @@ import type { AttackPairView, CardView, GameViewState, PlayerView, SeatId, Suit 
 import { seatToPosition } from "./lobby.js";
 import type { TablePosition } from "./lobby.js";
 import {
-  demoGameScenarios,
   describeCard,
   getNextCardFocusIndex,
   getSelectableCardIds,
@@ -14,7 +13,7 @@ import {
   rankLabel,
   suitPresentation
 } from "./gameTable.js";
-import type { CardFocusKey, DemoScenarioId } from "./gameTable.js";
+import type { CardFocusKey } from "./gameTable.js";
 
 const tableSeatIds = [0, 1, 2, 3] as const;
 
@@ -250,7 +249,19 @@ export function TrumpDeckCluster({ trumpSuit, bottomCard, drawPileCount, swapAva
   );
 }
 
-export function AttackPairGrid({ pairs, players }: { pairs: AttackPairView[]; players: PlayerView[] }) {
+export function AttackPairGrid({
+  pairs,
+  players,
+  defendableAttackIds = new Set<string>(),
+  selectedAttackId = null,
+  onSelectDefenseTarget
+}: {
+  pairs: AttackPairView[];
+  players: PlayerView[];
+  defendableAttackIds?: Set<string>;
+  selectedAttackId?: string | null;
+  onSelectDefenseTarget?: (attackId: string) => void;
+}) {
   const playerName = (seatId: SeatId) => players.find((player) => player.seatId === seatId)?.nickname ?? `座位 ${seatId}`;
   if (pairs.length === 0) return <div className="attack-grid-empty">等待主攻方出牌</div>;
 
@@ -267,6 +278,16 @@ export function AttackPairGrid({ pairs, players }: { pairs: AttackPairView[]; pl
           <div className="attack-card"><Card card={pair.attack} size="small" /></div>
           {pair.defense ? (
             <div className="defense-card"><Card card={pair.defense} size="small" /></div>
+          ) : defendableAttackIds.has(pair.attackId) ? (
+            <button
+              className={`defense-slot defense-target ${selectedAttackId === pair.attackId ? "is-selected" : ""}`}
+              type="button"
+              aria-label={`选择第 ${index + 1} 组作为防守目标`}
+              aria-pressed={selectedAttackId === pair.attackId}
+              onClick={() => onSelectDefenseTarget?.(pair.attackId)}
+            >
+              {selectedAttackId === pair.attackId ? "已选防守目标" : "选择防守"}
+            </button>
           ) : (
             <span className="defense-slot">待防守</span>
           )}
@@ -276,7 +297,17 @@ export function AttackPairGrid({ pairs, players }: { pairs: AttackPairView[]; pl
   );
 }
 
-export function CenterArena({ game }: { game: GameViewState }) {
+export function CenterArena({
+  game,
+  defendableAttackIds,
+  selectedAttackId,
+  onSelectDefenseTarget
+}: {
+  game: GameViewState;
+  defendableAttackIds?: Set<string>;
+  selectedAttackId?: string | null;
+  onSelectDefenseTarget?: (attackId: string) => void;
+}) {
   return (
     <section className="center-arena" aria-label="桌面攻防区">
       <p className="center-message">{game.message}</p>
@@ -287,7 +318,13 @@ export function CenterArena({ game }: { game: GameViewState }) {
           drawPileCount={game.drawPileCount}
           swapAvailable={game.mainTwoSwapAvailable}
         />
-        <AttackPairGrid pairs={game.table} players={game.players} />
+        <AttackPairGrid
+          pairs={game.table}
+          players={game.players}
+          {...(defendableAttackIds === undefined ? {} : { defendableAttackIds })}
+          {...(selectedAttackId === undefined ? {} : { selectedAttackId })}
+          {...(onSelectDefenseTarget === undefined ? {} : { onSelectDefenseTarget })}
+        />
       </div>
     </section>
   );
@@ -305,12 +342,25 @@ export function GameStatusBanner({ game }: { game: GameViewState }) {
   );
 }
 
-export function GameTable({ game, selectedCardId, onSelectCard }: {
+export function GameTable({
+  game,
+  selectedCardId,
+  selectedAttackId = null,
+  onSelectCard,
+  onSelectDefenseTarget,
+  interactionDisabled = false
+}: {
   game: GameViewState;
   selectedCardId: string | null;
+  selectedAttackId?: string | null;
   onSelectCard: (cardId: string) => void;
+  onSelectDefenseTarget?: (attackId: string) => void;
+  interactionDisabled?: boolean;
 }) {
-  const selectableCardIds = useMemo(() => getSelectableCardIds(game), [game]);
+  const selectableCardIds = useMemo(
+    () => interactionDisabled ? new Set<string>() : getSelectableCardIds(game),
+    [game, interactionDisabled]
+  );
 
   return (
     <section className="game-table-frame" aria-label="打八张四人牌桌">
@@ -332,50 +382,15 @@ export function GameTable({ game, selectedCardId, onSelectCard }: {
             />
           );
         })}
-        <CenterArena game={game} />
+        <CenterArena
+          game={game}
+          defendableAttackIds={interactionDisabled
+            ? new Set<string>()
+            : new Set(game.legalActions.find((action) => action.type === "game:defend")?.attackIds ?? [])}
+          selectedAttackId={selectedAttackId}
+          {...(onSelectDefenseTarget === undefined ? {} : { onSelectDefenseTarget })}
+        />
       </div>
     </section>
-  );
-}
-
-export function GameDemoScreen({ onExit }: { onExit: () => void }) {
-  const [scenarioId, setScenarioId] = useState<DemoScenarioId>("active-round");
-  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
-  const [announcement, setAnnouncement] = useState("");
-  const game = demoGameScenarios[scenarioId].game;
-
-  function switchScenario(nextScenario: DemoScenarioId) {
-    setScenarioId(nextScenario);
-    setSelectedCardId(null);
-    setAnnouncement(`已切换到${demoGameScenarios[nextScenario].label}演示`);
-  }
-
-  function selectCard(cardId: string) {
-    const nextSelection = selectedCardId === cardId ? null : cardId;
-    setSelectedCardId(nextSelection);
-    const card = game.players.find((player) => player.seatId === game.selfSeat)?.hand?.find((candidate) => candidate.cardId === cardId);
-    setAnnouncement(nextSelection && card ? `已选择${describeCard(card)}` : "已取消选择");
-  }
-
-  return (
-    <main className="game-page">
-      <div className="game-toolbar">
-        <GameStatusBanner game={game} />
-        <div className="demo-switcher" role="group" aria-label="切换脱敏牌桌演示状态">
-          {(Object.entries(demoGameScenarios) as Array<[DemoScenarioId, { label: string; game: GameViewState }]>).map(([id, scenario]) => (
-            <button key={id} type="button" aria-pressed={scenarioId === id} onClick={() => switchScenario(id)}>{scenario.label}</button>
-          ))}
-        </div>
-        <button className="quiet-button game-exit" type="button" onClick={onExit}>返回上一页</button>
-      </div>
-
-      <GameTable game={game} selectedCardId={selectedCardId} onSelectCard={selectCard} />
-
-      <div className="game-preview-footer">
-        <span role="status" aria-live="polite">{announcement || "可用左右方向键浏览手牌，回车选择高亮牌"}</span>
-        <strong>{selectedCardId ? "已选牌 · 尚未发送" : "仅本地选牌预览"}</strong>
-        <span>出牌、收牌与协攻命令将在交互模块接入</span>
-      </div>
-    </main>
   );
 }
