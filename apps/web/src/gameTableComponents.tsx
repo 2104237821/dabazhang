@@ -347,15 +347,20 @@ export function GameTable({
   selectedCardId,
   selectedAttackId = null,
   onSelectCard,
-  onSelectDefenseTarget
+  onSelectDefenseTarget,
+  interactionDisabled = false
 }: {
   game: GameViewState;
   selectedCardId: string | null;
   selectedAttackId?: string | null;
   onSelectCard: (cardId: string) => void;
   onSelectDefenseTarget?: (attackId: string) => void;
+  interactionDisabled?: boolean;
 }) {
-  const selectableCardIds = useMemo(() => getSelectableCardIds(game), [game]);
+  const selectableCardIds = useMemo(
+    () => interactionDisabled ? new Set<string>() : getSelectableCardIds(game),
+    [game, interactionDisabled]
+  );
 
   return (
     <section className="game-table-frame" aria-label="打八张四人牌桌">
@@ -379,7 +384,9 @@ export function GameTable({
         })}
         <CenterArena
           game={game}
-          defendableAttackIds={new Set(game.legalActions.find((action) => action.type === "game:defend")?.attackIds ?? [])}
+          defendableAttackIds={interactionDisabled
+            ? new Set<string>()
+            : new Set(game.legalActions.find((action) => action.type === "game:defend")?.attackIds ?? [])}
           selectedAttackId={selectedAttackId}
           {...(onSelectDefenseTarget === undefined ? {} : { onSelectDefenseTarget })}
         />

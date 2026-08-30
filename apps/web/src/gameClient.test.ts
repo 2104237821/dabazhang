@@ -11,6 +11,7 @@ import {
   getPresenceNotice,
   getWinnerSummary,
   isSubmissionLocked,
+  makeSubmissionRetryable,
   prepareGameCommand,
   reconcileGameSnapshot,
   selectCard,
@@ -162,7 +163,8 @@ describe("game command adapter", () => {
     expect(isSubmissionLocked(acknowledged.submission)).toBe(true);
 
     const sameRevision = reconcileGameSnapshot(acknowledged, game);
-    expect(sameRevision).toBe(acknowledged);
+    expect(sameRevision.submission.status).toBe("idle");
+    expect(sameRevision.revision).toBe(18);
 
     const refreshed = reconcileGameSnapshot(acknowledged, { ...game, revision: 19 });
     expect(refreshed.submission.status).toBe("idle");
@@ -186,6 +188,21 @@ describe("game command adapter", () => {
     expect(failed.submission.status).toBe("error");
     expect(isSubmissionLocked(failed.submission)).toBe(false);
     expect(submissionMessage(failed.submission)).toBe("操作版本已过期");
+  });
+
+  it("turns a locked request into a retryable error without accepting a stale revision", () => {
+    const pending = {
+      ...createInteractionState(20),
+      submission: { status: "pending", requestId: "request-1", expectedRevision: 20 } as const
+    };
+    const interrupted = makeSubmissionRetryable(pending, "连接已中断");
+
+    expect(interrupted.submission).toEqual({
+      status: "error",
+      requestId: "request-1",
+      message: "连接已中断"
+    });
+    expect(reconcileGameSnapshot(interrupted, withLegalActions([], { revision: 19 }))).toBe(interrupted);
   });
 });
 

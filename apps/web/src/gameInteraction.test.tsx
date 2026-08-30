@@ -171,7 +171,7 @@ describe("round and result status", () => {
       legalActions: []
     });
     const html = renderToStaticMarkup(
-      <GameResultPanel game={game} interaction={stateWith({})} onIntent={() => undefined} />
+      <GameResultPanel game={game} interaction={stateWith({})} onIntent={() => undefined} hostSeat={game.selfSeat} />
     );
 
     expect(html).toContain("我方获胜");

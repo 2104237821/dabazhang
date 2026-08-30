@@ -90,7 +90,9 @@ export function getDefendableAttackIds(game: GameViewState): Set<string> {
   );
 }
 
-export function isSubmissionLocked(submission: SubmissionState): boolean {
+export function isSubmissionLocked(
+  submission: SubmissionState
+): submission is Extract<SubmissionState, { status: "pending" | "acknowledged" }> {
   return submission.status === "pending" || submission.status === "acknowledged";
 }
 
@@ -247,8 +249,20 @@ export function applyTransportError(state: InteractionState, requestId: string, 
   };
 }
 
+export function makeSubmissionRetryable(state: InteractionState, message: string): InteractionState {
+  if (!isSubmissionLocked(state.submission)) return state;
+  return {
+    ...state,
+    submission: {
+      status: "error",
+      requestId: state.submission.requestId,
+      message
+    }
+  };
+}
+
 export function reconcileGameSnapshot(state: InteractionState, game: GameViewState): InteractionState {
-  if (game.revision <= state.revision) return state;
+  if (game.revision < state.revision) return state;
   return createInteractionState(game.revision);
 }
 

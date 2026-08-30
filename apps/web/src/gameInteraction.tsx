@@ -12,6 +12,7 @@ import {
   getPresenceNotice,
   getWinnerSummary,
   isSubmissionLocked,
+  makeSubmissionRetryable,
   prepareGameCommand,
   reconcileGameSnapshot,
   selectCard,
@@ -33,12 +34,14 @@ function hasAction(game: GameViewState, type: GameCommandType): boolean {
   return getLegalAction(game, type) !== undefined;
 }
 
-export function GameActionPanel({ game, interaction, onIntent }: {
+export function GameActionPanel({ game, interaction, onIntent, disabled = false }: {
   game: GameViewState;
   interaction: InteractionState;
   onIntent: (intent: GameIntent) => void;
+  disabled?: boolean;
 }) {
-  const locked = isSubmissionLocked(interaction.submission);
+  const submissionLocked = isSubmissionLocked(interaction.submission);
+  const locked = disabled || submissionLocked;
   const message = submissionMessage(interaction.submission);
   const selectedCardId = interaction.selectedCardId;
   const attackAction = getLegalAction(game, "game:attack");
@@ -66,7 +69,7 @@ export function GameActionPanel({ game, interaction, onIntent }: {
   }
 
   return (
-    <section className="game-action-panel" aria-label="本次操作" aria-busy={locked}>
+    <section className="game-action-panel" aria-label="本次操作" aria-busy={submissionLocked}>
       <div className="game-action-buttons">
         {attackAction && actionButton(
           game.phase === "await-opening-attack" ? "首攻出牌" : "追加进攻",
@@ -147,14 +150,17 @@ export function GameRoundStatus({ game, serverTime, connectionState }: {
   );
 }
 
-export function GameResultPanel({ game, interaction, onIntent }: {
+export function GameResultPanel({ game, interaction, onIntent, hostSeat, disabled = false }: {
   game: GameViewState;
   interaction: InteractionState;
   onIntent: (intent: GameIntent) => void;
+  hostSeat: number;
+  disabled?: boolean;
 }) {
   const summary = getWinnerSummary(game);
   if (summary === undefined) return null;
-  const locked = isSubmissionLocked(interaction.submission);
+  const locked = disabled || isSubmissionLocked(interaction.submission);
+  const isHost = game.selfSeat === hostSeat;
   const finishNames = game.finishedOrder.map(
     (seatId) => game.players.find((player) => player.seatId === seatId)?.nickname ?? `${seatId}号座位`
   );
@@ -164,9 +170,13 @@ export function GameResultPanel({ game, interaction, onIntent }: {
       <h2 id="game-result-title">{summary.title}</h2>
       <strong>{summary.detail}</strong>
       <span>出完顺序：{finishNames.length > 0 ? finishNames.join(" → ") : "暂无"}</span>
-      <button type="button" disabled={locked} onClick={() => onIntent({ type: "match:play-again" })}>
-        {locked ? "正在准备…" : "再来一局"}
-      </button>
+      {isHost ? (
+        <button type="button" disabled={locked} onClick={() => onIntent({ type: "match:play-again" })}>
+          {isSubmissionLocked(interaction.submission) ? "正在准备…" : "再来一局"}
+        </button>
+      ) : (
+        <span className="game-result-waiting">等待房主开始下一局</span>
+      )}
     </section>
   );
 }
@@ -175,7 +185,9 @@ export interface GameInteractionScreenProps {
   snapshot: StateSnapshot;
   client: GameClient;
   connectionState?: ConnectionState;
+  connectionGeneration?: string | number;
   requestIdFactory?: RequestIdFactory;
+  ackTimeoutMs?: number;
   modeLabel?: string;
   toolbarExtras?: ReactNode;
   onExit?: () => void;
@@ -185,7 +197,9 @@ export function GameInteractionScreen({
   snapshot,
   client,
   connectionState = "connected",
+  connectionGeneration = 0,
   requestIdFactory = defaultRequestIdFactory,
+  ackTimeoutMs = 10_000,
   modeLabel,
   toolbarExtras,
   onExit
@@ -195,16 +209,53 @@ export function GameInteractionScreen({
     createInteractionState(game?.revision ?? snapshot.revision)
   );
   const interactionRef = useRef(interaction);
+  const mountedRef = useRef(true);
+  const previousSnapshotRef = useRef(snapshot);
+  const previousConnectionGenerationRef = useRef(connectionGeneration);
+  const activeRequestRef = useRef<{
+    token: symbol;
+    requestId: string;
+    timeoutId: ReturnType<typeof globalThis.setTimeout>;
+  } | null>(null);
 
   function updateInteraction(next: InteractionState) {
+    if (!mountedRef.current) return;
     interactionRef.current = next;
     setInteraction(next);
   }
 
+  function cancelActiveRequest() {
+    const active = activeRequestRef.current;
+    if (active !== null) globalThis.clearTimeout(active.timeoutId);
+    activeRequestRef.current = null;
+  }
+
   useEffect(() => {
-    if (game === undefined) return;
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      cancelActiveRequest();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (previousSnapshotRef.current === snapshot) return;
+    previousSnapshotRef.current = snapshot;
+    if (game === undefined || game.revision < interactionRef.current.revision) return;
+    cancelActiveRequest();
     updateInteraction(reconcileGameSnapshot(interactionRef.current, game));
-  }, [game?.revision]);
+  }, [snapshot]);
+
+  useEffect(() => {
+    const generationChanged = previousConnectionGenerationRef.current !== connectionGeneration;
+    previousConnectionGenerationRef.current = connectionGeneration;
+    if (connectionState === "connected" && !generationChanged) return;
+    cancelActiveRequest();
+    const message = connectionState === "connected"
+      ? "连接已恢复，先前操作未确认，请按最新牌桌重试"
+      : "连接已中断，先前操作未确认，请重连后重试";
+    updateInteraction(makeSubmissionRetryable(interactionRef.current, message));
+  }, [connectionGeneration, connectionState]);
 
   if (game === undefined) {
     return (
@@ -217,22 +268,42 @@ export function GameInteractionScreen({
   const currentGame = game;
 
   function handleSelectCard(cardId: string) {
+    if (connectionState !== "connected") return;
     updateInteraction(selectCard(interactionRef.current, currentGame, cardId));
   }
 
   function handleSelectDefenseTarget(attackId: string) {
+    if (connectionState !== "connected") return;
     updateInteraction(selectDefenseTarget(interactionRef.current, currentGame, attackId));
   }
 
   async function submitIntent(intent: GameIntent) {
+    if (connectionState !== "connected") return;
     const requestId = requestIdFactory();
     const prepared = prepareGameCommand(currentGame, interactionRef.current, intent, requestId);
     updateInteraction(prepared.state);
     if (prepared.command === undefined) return;
+    const token = Symbol(requestId);
+    const timeoutId = globalThis.setTimeout(() => {
+      if (!mountedRef.current || activeRequestRef.current?.token !== token) return;
+      activeRequestRef.current = null;
+      updateInteraction(applyTransportError(
+        interactionRef.current,
+        requestId,
+        new Error("服务器确认超时，请重试")
+      ));
+    }, ackTimeoutMs);
+    activeRequestRef.current = { token, requestId, timeoutId };
     try {
       const ack = await client.sendCommand(prepared.command);
+      if (!mountedRef.current || activeRequestRef.current?.token !== token) return;
+      globalThis.clearTimeout(timeoutId);
+      activeRequestRef.current = null;
       updateInteraction(applyCommandAck(interactionRef.current, ack));
     } catch (error) {
+      if (!mountedRef.current || activeRequestRef.current?.token !== token) return;
+      globalThis.clearTimeout(timeoutId);
+      activeRequestRef.current = null;
       updateInteraction(applyTransportError(interactionRef.current, requestId, error));
     }
   }
@@ -257,13 +328,25 @@ export function GameInteractionScreen({
           selectedAttackId={interaction.selectedAttackId ?? null}
           onSelectCard={handleSelectCard}
           onSelectDefenseTarget={handleSelectDefenseTarget}
+          interactionDisabled={connectionState !== "connected"}
         />
-        <GameResultPanel game={game} interaction={interaction} onIntent={(intent) => void submitIntent(intent)} />
+        <GameResultPanel
+          game={game}
+          interaction={interaction}
+          onIntent={(intent) => void submitIntent(intent)}
+          hostSeat={snapshot.room.hostSeat}
+          disabled={connectionState !== "connected"}
+        />
       </div>
 
       <div className="game-command-dock">
         <GameRoundStatus game={game} serverTime={snapshot.serverTime} connectionState={connectionState} />
-        <GameActionPanel game={game} interaction={interaction} onIntent={(intent) => void submitIntent(intent)} />
+        <GameActionPanel
+          game={game}
+          interaction={interaction}
+          onIntent={(intent) => void submitIntent(intent)}
+          disabled={connectionState !== "connected"}
+        />
       </div>
     </main>
   );
