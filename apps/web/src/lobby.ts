@@ -6,9 +6,11 @@ export interface LobbyClient {
   createRoom(nickname: string): Promise<RoomView>;
   joinRoom(nickname: string, roomCode: string): Promise<RoomView>;
   setReady(room: RoomView, ready: boolean): Promise<RoomView>;
+  addBot(room: RoomView): Promise<RoomView>;
   fillBots(room: RoomView): Promise<RoomView>;
   removeBot(room: RoomView, seatId: SeatId): Promise<RoomView>;
   startRoom(room: RoomView): Promise<RoomView>;
+  leaveRoom(room: RoomView): Promise<void>;
 }
 
 const roomCodePattern = /^[A-HJ-NP-Z2-9]{6}$/;
@@ -55,7 +57,7 @@ export function getStartBlocker(room: RoomView): string | null {
   if (room.status !== "lobby") return "游戏已经开始";
   if (room.selfSeat !== room.hostSeat) return "只有房主可以开始";
   if (room.players.length !== 4) return "需要四个座位全部入座";
-  if (room.players.some((player) => player.controller === "human" && !player.ready)) {
+  if (room.players.some((player) => player.controller !== "bot-fixed" && !player.ready)) {
     return "所有真人玩家准备后才能开始";
   }
   return null;
@@ -142,6 +144,16 @@ export class LocalLobbyClient implements LobbyClient {
     return cloneRoom(room, players);
   }
 
+  async addBot(room: RoomView): Promise<RoomView> {
+    await waitForUi();
+    const seatId = ([0, 1, 2, 3] as const).find(
+      (candidate) => !room.players.some((player) => player.seatId === candidate)
+    );
+    if (seatId === undefined) throw new Error("房间已经坐满了");
+    const botIndex = room.players.filter((player) => player.controller === "bot-fixed").length;
+    return cloneRoom(room, [...room.players, createBot(seatId, botIndex)].sort((left, right) => left.seatId - right.seatId));
+  }
+
   async removeBot(room: RoomView, seatId: SeatId): Promise<RoomView> {
     await waitForUi();
     return cloneRoom(room, room.players.filter((player) => !(player.seatId === seatId && player.controller === "bot-fixed")));
@@ -152,5 +164,9 @@ export class LocalLobbyClient implements LobbyClient {
     const blocker = getStartBlocker(room);
     if (blocker) throw new Error(blocker);
     return { ...cloneRoom(room), status: "playing" };
+  }
+
+  async leaveRoom(): Promise<void> {
+    await waitForUi();
   }
 }

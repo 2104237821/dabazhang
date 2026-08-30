@@ -68,4 +68,18 @@ describe("room start conditions", () => {
     expect(filled.players.filter((player) => player.controller === "bot-fixed")).toHaveLength(3);
     expect(filled.players.every((player) => player.ready)).toBe(true);
   });
+
+  it("adds one bot at a time and refuses to exceed four seats", async () => {
+    const client = new LocalLobbyClient();
+    const first = await client.addBot(room([human(0)]));
+    expect(first.players).toHaveLength(2);
+    expect(first.players[1]).toMatchObject({ seatId: 1, controller: "bot-fixed", ready: true });
+
+    await expect(client.addBot(room([human(0), human(1), human(2), human(3)]))).rejects.toThrow("坐满");
+  });
+
+  it("still requires a disconnected human seat to be ready", () => {
+    const disconnected = { ...human(1, false), online: false, controller: "human-grace" as const };
+    expect(getStartBlocker(room([human(0), disconnected, human(2), human(3)]))).toContain("准备");
+  });
 });

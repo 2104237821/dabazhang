@@ -14,7 +14,7 @@
   "scripts": {
     "dev": "concurrently -n server,web -c cyan,green \"tsx watch apps/server/src/index.ts\" \"vite apps/web --config apps/web/vite.config.ts\"",
     "build": "tsc -b packages/protocol packages/game-core packages/bot apps/server && vite build apps/web --config apps/web/vite.config.ts",
-    "typecheck": "tsc -b packages/protocol packages/game-core packages/bot apps/server --pretty false && tsc -p apps/web/tsconfig.json --pretty false",
+    "typecheck": "tsc -b packages/protocol packages/game-core packages/bot apps/server --pretty false && tsc -p apps/web/tsconfig.json --pretty false && tsc -p tests/tsconfig.json --pretty false",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests",
     "test:coverage": "vitest run --coverage",

@@ -2,7 +2,6 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import type { PlayerView, RoomView, SeatId } from "@dabazhang/protocol";
 import {
-  LocalLobbyClient,
   getPlayerAtSeat,
   getSeatLabel,
   getStartBlocker,
@@ -12,53 +11,107 @@ import {
   validateRoomCode
 } from "./lobby.js";
 import type { LobbyClient, TablePosition } from "./lobby.js";
-import { GameDemoScreen } from "./gameInteraction.js";
+import type { ConnectionState } from "./gameClient.js";
+import { GameDemoScreen, GameInteractionScreen } from "./gameInteraction.js";
+import { SocketGameClient } from "./socketClient.js";
+import type { SocketClientState } from "./socketClient.js";
 
 type EntryMode = "create" | "join";
 
-const defaultClient = new LocalLobbyClient();
 const seatIds = [0, 1, 2, 3] as const;
+let defaultRealtimeClient: SocketGameClient | undefined;
 
 interface AppProps {
   client?: LobbyClient;
+  realtimeClient?: SocketGameClient;
 }
 
-export function App({ client = defaultClient }: AppProps) {
-  const [room, setRoom] = useState<RoomView | null>(null);
+export function App({ client: injectedClient, realtimeClient: injectedRealtimeClient }: AppProps) {
+  const realtimeClient = injectedClient === undefined
+    ? injectedRealtimeClient ?? getDefaultRealtimeClient()
+    : null;
+  const client: LobbyClient = injectedClient ?? realtimeClient ?? missingLobbyClient();
+
+  const [localRoom, setLocalRoom] = useState<RoomView | null>(null);
+  const [socketState, setSocketState] = useState<SocketClientState | null>(() => realtimeClient?.getState() ?? null);
   const [gameDemoOpen, setGameDemoOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [message, setMessage] = useState("");
+  const room = socketState?.snapshot?.room ?? localRoom;
+  const snapshot = socketState?.snapshot;
+  const connectionState: ConnectionState = socketState?.connectionState ?? "connected";
+
+  useEffect(() => {
+    if (realtimeClient === null) return;
+    return realtimeClient.subscribe(setSocketState);
+  }, [realtimeClient]);
+
+  useEffect(() => {
+    if (socketState?.terminalError) {
+      setLocalRoom(null);
+      setMessage(socketState.terminalError);
+      return;
+    }
+    if (socketState?.notice) setMessage(socketState.notice);
+  }, [socketState?.notice, socketState?.terminalError]);
 
   useEffect(() => {
     document.title = gameDemoOpen ? "牌桌演示 · 打八张" : room ? `房间 ${room.roomCode} · 打八张` : "打八张 · 四人对家牌局";
   }, [gameDemoOpen, room]);
 
+  async function leaveRoom() {
+    if (room === null) return;
+    try {
+      await client.leaveRoom(room);
+      setLocalRoom(null);
+      setMessage(room.status === "lobby" ? "已离开房间" : "已离开本局，座位将由机器人接管");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "离开房间失败，请重试");
+    }
+  }
+
+  const liveGame = !gameDemoOpen && snapshot !== undefined && room?.status !== "lobby";
+
   return (
     <>
       <div className="app-shell">
-        <SiteHeader inRoom={room !== null || gameDemoOpen} onOpenRules={() => setRulesOpen(true)} />
+        <SiteHeader
+          badge={gameDemoOpen ? "脱敏演示" : room ? connectionLabel(connectionState, socketState?.restoring) : undefined}
+          onOpenRules={() => setRulesOpen(true)}
+        />
         {gameDemoOpen ? (
           <GameDemoScreen onExit={() => setGameDemoOpen(false)} />
+        ) : liveGame && realtimeClient !== null ? (
+          <GameInteractionScreen
+            snapshot={snapshot}
+            client={realtimeClient}
+            connectionState={connectionState}
+            connectionGeneration={socketState?.connectionGeneration ?? 0}
+            modeLabel={`联网房间 ${snapshot.room.roomCode}`}
+            onExit={() => void leaveRoom()}
+            exitLabel="离开本局（机器人接管）"
+          />
         ) : room ? (
           <RoomScreen
             client={client}
             room={room}
-            onRoomChange={setRoom}
+            onRoomChange={setLocalRoom}
             onOpenGameDemo={() => setGameDemoOpen(true)}
-            onLeave={() => {
-              setRoom(null);
-              setMessage("已离开演示房间");
-            }}
+            onLeave={() => void leaveRoom()}
             announce={setMessage}
+            connectionState={connectionState}
           />
+        ) : socketState?.restoring ? (
+          <RestoreScreen connectionState={connectionState} />
         ) : (
           <HomeScreen
             client={client}
             onOpenGameDemo={() => setGameDemoOpen(true)}
             onEnterRoom={(nextRoom) => {
-              setRoom(nextRoom);
+              setLocalRoom(nextRoom);
               setMessage(`已进入房间 ${nextRoom.roomCode}`);
             }}
+            announce={setMessage}
           />
         )}
       </div>
@@ -72,7 +125,23 @@ export function App({ client = defaultClient }: AppProps) {
   );
 }
 
-function SiteHeader({ inRoom, onOpenRules }: { inRoom: boolean; onOpenRules: () => void }) {
+function connectionLabel(connection: ConnectionState, restoring = false): string {
+  if (restoring) return "正在恢复牌桌";
+  if (connection === "connected") return "服务器已连接";
+  if (connection === "reconnecting") return "正在重连";
+  return "连接已断开";
+}
+
+function getDefaultRealtimeClient(): SocketGameClient {
+  defaultRealtimeClient ??= new SocketGameClient();
+  return defaultRealtimeClient;
+}
+
+function missingLobbyClient(): never {
+  throw new Error("缺少房间客户端");
+}
+
+function SiteHeader({ badge, onOpenRules }: { badge: string | undefined; onOpenRules: () => void }) {
   return (
     <header className="site-header">
       <div className="brand-lockup" aria-label="打八张">
@@ -83,7 +152,7 @@ function SiteHeader({ inRoom, onOpenRules }: { inRoom: boolean; onOpenRules: () 
         </span>
       </div>
       <nav aria-label="页面工具">
-        {inRoom && <span className="local-badge">本地页面演示</span>}
+        {badge && <span className="local-badge">{badge}</span>}
         <button className="quiet-button" type="button" onClick={onOpenRules}>
           <span aria-hidden="true">?</span> 游戏规则
         </button>
@@ -92,10 +161,22 @@ function SiteHeader({ inRoom, onOpenRules }: { inRoom: boolean; onOpenRules: () 
   );
 }
 
-function HomeScreen({ client, onEnterRoom, onOpenGameDemo }: {
+function RestoreScreen({ connectionState }: { connectionState: ConnectionState }) {
+  return (
+    <main className="restore-page" role="status" aria-live="polite">
+      <span className="restore-spinner" aria-hidden="true">八</span>
+      <p className="eyebrow">恢复牌桌</p>
+      <h1>{connectionState === "disconnected" ? "暂时无法连接服务器" : "正在回到上一局…"}</h1>
+      <p>正在验证本机保存的恢复凭证，并同步最新的权威牌桌状态。</p>
+    </main>
+  );
+}
+
+function HomeScreen({ client, onEnterRoom, onOpenGameDemo, announce }: {
   client: LobbyClient;
   onEnterRoom: (room: RoomView) => void;
   onOpenGameDemo: () => void;
+  announce: (message: string) => void;
 }) {
   const [mode, setMode] = useState<EntryMode>("create");
   const [nickname, setNickname] = useState("");
@@ -121,6 +202,8 @@ function HomeScreen({ client, onEnterRoom, onOpenGameDemo }: {
         ? await client.createRoom(nickname)
         : await client.joinRoom(nickname, roomCode);
       onEnterRoom(nextRoom);
+    } catch (error) {
+      announce(error instanceof Error ? error.message : "无法进入房间，请重试");
     } finally {
       setPending(false);
     }
@@ -236,7 +319,7 @@ function HomeScreen({ client, onEnterRoom, onOpenGameDemo }: {
           </button>
         </form>
 
-        <p className="entry-note"><span aria-hidden="true">●</span> 当前为本地页面演示，联网房间将在服务端接入后启用。</p>
+        <p className="entry-note"><span aria-hidden="true">●</span> 房间实时同步；刷新页面会自动尝试恢复本人的座位。</p>
       </section>
     </main>
   );
@@ -253,16 +336,18 @@ interface RoomScreenProps {
   onOpenGameDemo: () => void;
   onLeave: () => void;
   announce: (message: string) => void;
+  connectionState: ConnectionState;
 }
 
-function RoomScreen({ client, room, onRoomChange, onOpenGameDemo, onLeave, announce }: RoomScreenProps) {
+function RoomScreen({ client, room, onRoomChange, onOpenGameDemo, onLeave, announce, connectionState }: RoomScreenProps) {
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const interactionDisabled = pendingAction !== null || connectionState !== "connected";
   const self = getPlayerAtSeat(room, room.selfSeat);
   const isHost = room.selfSeat === room.hostSeat;
   const blocker = getStartBlocker(room);
   const occupied = room.players.length;
-  const readyHumans = room.players.filter((player) => player.controller === "human" && player.ready).length;
-  const humanCount = room.players.filter((player) => player.controller === "human").length;
+  const readyHumans = room.players.filter((player) => player.controller !== "bot-fixed" && player.ready).length;
+  const humanCount = room.players.filter((player) => player.controller !== "bot-fixed").length;
 
   async function runAction(label: string, action: () => Promise<RoomView>, successMessage: string) {
     setPendingAction(label);
@@ -293,7 +378,7 @@ function RoomScreen({ client, room, onRoomChange, onOpenGameDemo, onLeave, annou
           <p className="eyebrow">等待房间</p>
           <h1>四方已摆好，只等人齐</h1>
         </div>
-        <button className="quiet-button leave-button" type="button" onClick={onLeave}>离开房间</button>
+        <button className="quiet-button leave-button" type="button" disabled={interactionDisabled} onClick={onLeave}>离开房间</button>
       </div>
 
       <section className="table-frame" aria-label={`房间 ${room.roomCode} 的四人牌桌`} aria-busy={pendingAction !== null}>
@@ -311,7 +396,7 @@ function RoomScreen({ client, room, onRoomChange, onOpenGameDemo, onLeave, annou
                 selfSeat={room.selfSeat}
                 hostSeat={room.hostSeat}
                 isHost={isHost}
-                disabled={pendingAction !== null || room.status !== "lobby"}
+                disabled={interactionDisabled || room.status !== "lobby"}
                 onRemoveBot={(botSeat) => void runAction(
                   "remove-bot",
                   () => client.removeBot(room, botSeat),
@@ -344,6 +429,9 @@ function RoomScreen({ client, room, onRoomChange, onOpenGameDemo, onLeave, annou
                   <span><i className="team-dot team-dot-copper" />左右两家</span>
                 </div>
                 <p className="ready-summary">真人已准备 {readyHumans} / {humanCount}</p>
+                {connectionState !== "connected" && (
+                  <p className="ready-summary" role="status">{connectionLabel(connectionState)}，房间操作已暂停</p>
+                )}
               </>
             )}
           </div>
@@ -355,7 +443,7 @@ function RoomScreen({ client, room, onRoomChange, onOpenGameDemo, onLeave, annou
           <button
             className={self.ready ? "secondary-button ready-button is-ready" : "secondary-button ready-button"}
             type="button"
-            disabled={pendingAction !== null}
+            disabled={interactionDisabled}
             aria-pressed={self.ready}
             onClick={() => void runAction(
               "ready",
@@ -372,7 +460,15 @@ function RoomScreen({ client, room, onRoomChange, onOpenGameDemo, onLeave, annou
             <button
               className="secondary-button"
               type="button"
-              disabled={pendingAction !== null || occupied === 4}
+              disabled={interactionDisabled || occupied === 4}
+              onClick={() => void runAction("add-bot", () => client.addBot(room), "机器人已入座")}
+            >
+              添加机器人
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={interactionDisabled || occupied === 4}
               onClick={() => void runAction("fill-bots", () => client.fillBots(room), "机器人已补满空位")}
             >
               补满机器人
@@ -381,7 +477,7 @@ function RoomScreen({ client, room, onRoomChange, onOpenGameDemo, onLeave, annou
               <button
                 className="primary-button"
                 type="button"
-                disabled={pendingAction !== null || blocker !== null}
+                disabled={interactionDisabled || blocker !== null}
                 aria-describedby={blocker ? "start-blocker" : undefined}
                 onClick={() => void runAction("start", () => client.startRoom(room), "房间已开始")}
               >
@@ -413,7 +509,11 @@ function Seat({ seatId, position, player, selfSeat, hostSeat, isHost, disabled, 
   const status = player
     ? player.controller === "bot-fixed"
       ? "机器人 · 已就绪"
-      : player.ready ? "已准备" : "未准备"
+      : player.controller === "bot-takeover"
+        ? "离线 · 机器人接管"
+        : player.controller === "human-grace" || !player.online
+          ? player.ready ? "离线 · 已准备" : "离线 · 未准备"
+          : player.ready ? "已准备" : "未准备"
     : "等待入座";
   const initials = player ? Array.from(player.nickname.replace(/^房主·|^机器人·/, "")).slice(0, 2).join("") : "+";
 

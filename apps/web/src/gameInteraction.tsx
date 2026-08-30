@@ -191,6 +191,7 @@ export interface GameInteractionScreenProps {
   modeLabel?: string;
   toolbarExtras?: ReactNode;
   onExit?: () => void;
+  exitLabel?: string;
 }
 
 export function GameInteractionScreen({
@@ -202,7 +203,8 @@ export function GameInteractionScreen({
   ackTimeoutMs = 10_000,
   modeLabel,
   toolbarExtras,
-  onExit
+  onExit,
+  exitLabel = "返回上一页"
 }: GameInteractionScreenProps) {
   const game = snapshot.game;
   const [interaction, setInteraction] = useState<InteractionState>(() =>
@@ -316,7 +318,7 @@ export function GameInteractionScreen({
           <div className="game-toolbar-tools">
             {modeLabel && <span className="game-mode-label">{modeLabel}</span>}
             {toolbarExtras}
-            {onExit && <button className="quiet-button game-exit" type="button" onClick={onExit}>返回上一页</button>}
+            {onExit && <button className="quiet-button game-exit" type="button" onClick={onExit}>{exitLabel}</button>}
           </div>
         )}
       </div>
