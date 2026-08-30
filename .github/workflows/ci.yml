@@ -30,7 +30,7 @@ jobs:
           PORT=3100 \
           PUBLIC_ORIGIN=http://127.0.0.1:3100 \
           STATIC_ROOT="$PWD/apps/web/dist" \
-          npm start > /tmp/dabazhang-server.log 2>&1 &
+          node apps/server/dist/index.js > /tmp/dabazhang-server.log 2>&1 &
           server_pid=$!
           trap 'kill -TERM "$server_pid" 2>/dev/null || true' EXIT
           node -e "let n=0; const poll=()=>fetch('http://127.0.0.1:3100/readyz').then(r=>{if(!r.ok)throw new Error(String(r.status))}).catch(e=>{if(++n>=30)throw e; return new Promise(r=>setTimeout(r,200)).then(poll)}); await poll()"
