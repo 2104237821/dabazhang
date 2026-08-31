@@ -41,7 +41,7 @@ jobs:
       - name: Docker build
         run: docker build --tag dabazhang:ci .
 
-  browser-baseline:
+  browser-qa:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,11 +51,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - name: Run browser QA and capture Linux visual baselines
-        run: npm run test:e2e -- --update-snapshots
-      - name: Upload Linux visual baselines
+      - name: Run browser, visual and accessibility QA
+        run: npm run test:e2e
+      - name: Upload browser failure artifacts
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: linux-visual-baselines
-          path: tests/e2e/__screenshots__
-          retention-days: 1
+          name: browser-failure-artifacts
+          path: output/playwright
+          retention-days: 7
