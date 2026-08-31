@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main, codex/v1-web-game]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Production Node smoke test
+        shell: bash
+        run: |
+          NODE_ENV=production \
+          HOST=127.0.0.1 \
+          PORT=3100 \
+          PUBLIC_ORIGIN=http://127.0.0.1:3100 \
+          STATIC_ROOT="$PWD/apps/web/dist" \
+          node apps/server/dist/index.js > /tmp/dabazhang-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill -TERM "$server_pid" 2>/dev/null || true' EXIT
+          node -e "let n=0; const poll=()=>fetch('http://127.0.0.1:3100/readyz').then(r=>{if(!r.ok)throw new Error(String(r.status))}).catch(e=>{if(++n>=30)throw e; return new Promise(r=>setTimeout(r,200)).then(poll)}); await poll()"
+          node -e "const urls=['/','/healthz','/readyz']; const rs=await Promise.all(urls.map(p=>fetch('http://127.0.0.1:3100'+p))); if(rs.some(r=>!r.ok)) process.exit(1)"
+          kill -TERM "$server_pid"
+          wait "$server_pid"
+          trap - EXIT
+      - name: Docker build
+        run: docker build --tag dabazhang:ci .
+
+  browser-qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run browser, visual and accessibility QA
+        run: npm run test:e2e
+      - name: Upload browser failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-artifacts
+          path: output/playwright
+          retention-days: 7
