@@ -948,7 +948,7 @@ a:focus-visible {
 }
 
 .drawer-heading .eyebrow {
-  color: #88754d;
+  color: #715f37;
 }
 
 .drawer-heading h2 {
@@ -977,7 +977,7 @@ a:focus-visible {
 }
 
 .rule-section > span {
-  color: #a28b55;
+  color: #715f37;
   font-family: Georgia, serif;
   font-size: 13px;
   font-weight: 800;
@@ -998,7 +998,7 @@ a:focus-visible {
 
 .rules-note {
   margin: 22px 0 0 52px;
-  color: #7b817e;
+  color: #606966;
   font-size: 12px;
 }
 
