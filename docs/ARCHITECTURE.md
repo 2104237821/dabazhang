@@ -20,13 +20,14 @@
   → Socket.IO 定向发送
 ```
 
-生产随机数使用 `node:crypto`；测试使用可注入的固定种子或固定牌序。所有有效状态变化增加 `revision`。重复 `requestId` 返回缓存确认，过期 `expectedRevision` 被拒绝。
+生产随机数使用 `node:crypto`；测试使用可注入的固定种子或固定牌序。所有有效状态变化增加 `revision`。服务端为每个连接缓存限定数量的 `requestId`，重复请求返回 `DUPLICATE_REQUEST`，过期 `expectedRevision` 返回 `STALE_REVISION`，两者都不会再次改变状态。
 
 ## 会话与房间
 
 - 房间码为六位去歧义大写字符，最多四席。
 - 创建或加入成功后仅向本人返回随机恢复令牌；令牌保存在浏览器本地存储，不进入 URL、日志或公开快照。
 - 同一令牌在新连接恢复时替换旧连接。
+- Web 客户端只在本地保存房间码、座位号和恢复令牌；刷新或网络恢复后使用令牌重新绑定座位，并忽略早于当前 `revision` 的快照。
 - 房间状态：`LOBBY → PLAYING → POST_GAME → PLAYING`。
 - 座位控制：`HUMAN_ONLINE → HUMAN_GRACE → BOT_TAKEOVER → HUMAN_ONLINE`，固定机器人使用独立类型 `BOT_FIXED`。
 - 在线决定时间为 45 秒，超时只由机器人执行一个合法动作。
