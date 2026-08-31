@@ -293,7 +293,7 @@
 
 .game-seat.is-finished .game-player-meta {
   border-style: dashed;
-  opacity: 0.76;
+  box-shadow: inset 0 0 0 2px rgba(214, 166, 59, 0.16), 0 5px 12px rgba(0, 0, 0, 0.22);
 }
 
 .game-avatar {
