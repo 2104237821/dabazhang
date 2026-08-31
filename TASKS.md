@@ -17,7 +17,7 @@
 | T10 | DONE | T06,T07,T09 | 主协调代理 | 跨模块集成 | codex/v1-web-game | integration + build | 651c46a,3c59cd4 | 通过，153 项测试；真实创建、开局、出牌、刷新恢复及脱敏检查通过 |
 | T11 | DONE | T07 | Kuhn + 主协调代理 | `apps/server`、部署文档；根部署配置由主协调代理维护 | task/T11-deploy / `.worktrees/T11` | Docker + health smoke | c245309,5effabb | 通过，38 项服务测试、生产冒烟与 GitHub Docker CI 通过 |
 | T12 | DONE | T10 | 主协调代理（接管 Hume） | E2E、视觉、无障碍 | task/T12-qa / `.worktrees/T12` | Playwright + a11y | b0ef85e | 通过，9 项真实浏览器流程、macOS/Linux 视觉基线与 axe 扫描通过 |
-| T13 | IN_PROGRESS | T11,T12 | 主协调代理 | 发布与总验收 | codex/v1-web-game | full CI | 待填 | 已复读总体目标，开始发布验收 |
+| T13 | DONE | T11,T12 | 主协调代理 | 发布与总验收 | codex/v1-web-game | full CI | 35499e6 | 通过；本机全量验收及 GitHub quality/browser-qa、Docker 构建全部成功 |
 
 ## 领取流程
 
