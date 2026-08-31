@@ -2,7 +2,7 @@ import type { CardView, GamePhase, GameViewState, PlayerView, Rank, Suit } from 
 import { getInteractiveCardIds } from "./gameClient.js";
 
 export type CardFocusKey = "ArrowLeft" | "ArrowRight" | "Home" | "End";
-export type DemoScenarioId = "active-round" | "late-game";
+export type DemoScenarioId = "active-round" | "assist-approval" | "main-two" | "three-player" | "late-game" | "finished";
 
 export const suitPresentation: Record<Suit, { label: string; symbol: string; color: "black" | "red" }> = {
   spade: { label: "黑桃", symbol: "♠", color: "black" },
@@ -130,6 +130,84 @@ export const demoGameScenarios: Record<DemoScenarioId, { label: string; game: Ga
       message: "轮到你追加进攻，也可以结束本轮"
     }
   },
+  "assist-approval": {
+    label: "协攻审批",
+    game: {
+      revision: 19,
+      phase: "await-assist-approval",
+      selfSeat: 0,
+      trumpSuit: "heart",
+      bottomCard: card("assist-bottom-heart-k", "heart", 13, true),
+      drawPileCount: 13,
+      mainTwoSwapAvailable: true,
+      primaryAttacker: 0,
+      defender: 1,
+      players: [
+        { seatId: 0, nickname: "大巴掌", teamId: 0, handCount: 8, hand: activeSelfHand, ready: true, online: true, controller: "human" },
+        { seatId: 1, nickname: "临风", teamId: 1, handCount: 8, ready: true, online: true, controller: "human" },
+        { seatId: 2, nickname: "南枝", teamId: 0, handCount: 7, ready: true, online: true, controller: "human" },
+        { seatId: 3, nickname: "北辰", teamId: 1, handCount: 8, ready: true, online: true, controller: "bot-fixed" }
+      ],
+      table: [
+        { attackId: "assist-attack-1", attacker: 0, attack: card("assist-table-c7", "club", 7), defense: card("assist-table-c11", "club", 11) }
+      ],
+      assistProposal: {
+        proposalId: "assist-proposal-1",
+        proposer: 2,
+        card: card("assist-proposed-d7", "diamond", 7)
+      },
+      finishedOrder: [],
+      legalActions: [{ type: "game:assist-decide", attackIds: ["assist-proposal-1"] }],
+      message: "队友南枝请求用方块7协攻，请决定是否允许"
+    }
+  },
+  "main-two": {
+    label: "主2换底",
+    game: {
+      revision: 27,
+      phase: "await-main-two-decision",
+      selfSeat: 0,
+      trumpSuit: "heart",
+      bottomCard: card("main-two-bottom-heart-k", "heart", 13, true),
+      drawPileCount: 9,
+      mainTwoSwapAvailable: true,
+      primaryAttacker: 3,
+      defender: 0,
+      players: [
+        { seatId: 0, nickname: "大巴掌", teamId: 0, handCount: 8, hand: activeSelfHand, ready: true, online: true, controller: "human" },
+        { seatId: 1, nickname: "临风", teamId: 1, handCount: 8, ready: true, online: true, controller: "human" },
+        { seatId: 2, nickname: "南枝", teamId: 0, handCount: 7, ready: true, online: true, controller: "bot-fixed" },
+        { seatId: 3, nickname: "北辰", teamId: 1, handCount: 7, ready: true, online: true, controller: "human" }
+      ],
+      table: [{ attackId: "main-two-attack", attacker: 3, attack: card("main-two-table-h11", "heart", 11, true) }],
+      finishedOrder: [],
+      legalActions: [{ type: "game:exchange-trump-two" }, { type: "game:decline-trump-two" }],
+      message: "你持有主2，可先换取公开底牌再决定如何防守"
+    }
+  },
+  "three-player": {
+    label: "三人阶段",
+    game: {
+      revision: 52,
+      phase: "await-opening-attack",
+      selfSeat: 0,
+      trumpSuit: "club",
+      drawPileCount: 0,
+      mainTwoSwapAvailable: false,
+      primaryAttacker: 0,
+      defender: 1,
+      players: [
+        { seatId: 0, nickname: "大巴掌", teamId: 0, handCount: 3, hand: lateSelfHand, ready: true, online: true, controller: "human" },
+        { seatId: 1, nickname: "临风", teamId: 1, handCount: 4, ready: true, online: true, controller: "human" },
+        { seatId: 2, nickname: "南枝", teamId: 0, handCount: 0, ready: true, online: true, controller: "bot-fixed", finishedPlace: 1 },
+        { seatId: 3, nickname: "北辰", teamId: 1, handCount: 5, ready: true, online: false, controller: "bot-takeover" }
+      ],
+      table: [],
+      finishedOrder: [2],
+      legalActions: [{ type: "game:attack", cardIds: ["late-c10", "late-d12"] }],
+      message: "对家已经出完；由你攻击下家，座位保持不移动"
+    }
+  },
   "late-game": {
     label: "牌堆已空",
     game: {
@@ -154,6 +232,30 @@ export const demoGameScenarios: Record<DemoScenarioId, { label: string; game: Ga
       finishedOrder: [0],
       legalActions: [],
       message: "等待对家防守；牌堆已空，本轮后不再补牌"
+    }
+  },
+  finished: {
+    label: "本局结算",
+    game: {
+      revision: 68,
+      phase: "finished",
+      selfSeat: 0,
+      trumpSuit: "spade",
+      drawPileCount: 0,
+      mainTwoSwapAvailable: false,
+      primaryAttacker: 0,
+      defender: 1,
+      players: [
+        { seatId: 0, nickname: "大巴掌", teamId: 0, handCount: 0, hand: [], ready: true, online: true, controller: "human", finishedPlace: 2 },
+        { seatId: 1, nickname: "临风", teamId: 1, handCount: 2, ready: true, online: true, controller: "human" },
+        { seatId: 2, nickname: "南枝", teamId: 0, handCount: 0, ready: true, online: true, controller: "bot-fixed", finishedPlace: 1 },
+        { seatId: 3, nickname: "北辰", teamId: 1, handCount: 1, ready: true, online: false, controller: "bot-takeover" }
+      ],
+      table: [],
+      finishedOrder: [2, 0],
+      winner: 0,
+      legalActions: [],
+      message: "我方两名队员已经正式出完，本局结束"
     }
   }
 };

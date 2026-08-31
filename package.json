@@ -18,10 +18,11 @@
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test",
+    "test:e2e": "tsc -b packages/protocol packages/game-core packages/bot apps/server && vite build apps/web --config apps/web/vite.config.ts && playwright test",
     "start": "node apps/server/dist/index.js"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "latest",
     "@playwright/test": "latest",
     "@types/node": "latest",
